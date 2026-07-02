@@ -118,13 +118,16 @@ LLM_TOOLS = [{
 
 
 # ---------------------------------------------------------
-#  SYSTEM PROMPT
+#  SYSTEM PROMPT (template with {cwd} placeholder)
 # ---------------------------------------------------------
 
 
 SYSTEM_PROMPT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompts", "system_prompt.txt")
 with open(SYSTEM_PROMPT_PATH, "r", encoding="utf-8") as f:
-    SYSTEM_PROMPT = f.read().strip()
+    SYSTEM_PROMPT_TEMPLATE = f.read().strip()
+
+# Substitute the current working directory into the template
+SYSTEM_PROMPT = SYSTEM_PROMPT_TEMPLATE.format(cwd=os.getcwd())
 
 
 def call_llm(messages):
