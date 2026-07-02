@@ -3,6 +3,7 @@ import subprocess
 import re
 import json
 import sys
+import shutil
 
 import requests
 from dotenv import load_dotenv
@@ -40,8 +41,9 @@ def check_bash_permission(cmd: str) -> bool:
     cmd_parts = [part.strip() for part in re.split(delimiters, cmd) if part.strip()]
     if all(map(is_allowed, cmd_parts)):
         return True
+    max_width = shutil.get_terminal_size().columns - 2
     question = f"Execute `{cmd}`? y/n\n"
-    wrap = '# ' + '-' * (len(question) - 2)
+    wrap = '# ' + '-' * min((len(question) - 2), max_width)
     expliscit_permission: str = input('\n' + wrap + '\n' + question + wrap + '\n')
     if expliscit_permission.lower() in ["y", "yes"]:
         return True
