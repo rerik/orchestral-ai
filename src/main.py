@@ -22,10 +22,51 @@ load_dotenv()
 
 
 ALLOWED_CMD = [
+    # --- File system navigation & inspection (read-only) ---
     "ls",
     "cd",
     "pwd",
-    "cat"
+    "cat",
+    "head",
+    "tail",
+    "wc",
+    "stat",
+    "file",
+    "du",
+    "df",
+
+    # --- Text search & processing (read-only) ---
+    "grep",
+    "sort",
+    "uniq",
+    "diff",
+    "comm",
+    "cut",
+    "tr",
+    "fmt",
+    "pr",
+    "fold",
+
+    # --- Output / printing (safe: redirections are caught by delimiter splitting) ---
+    "echo",
+    "printf",
+
+    # --- Command location ---
+    "which",
+    "type",
+    "command",
+    "hash",
+
+    # --- Path manipulation (read-only) ---
+    "basename",
+    "dirname",
+    "realpath",
+    "readlink",
+
+    # --- Low-risk file/directory creation ---
+    # "mkdir",
+    # "touch",
+    # "ln",
 ]
 
 
