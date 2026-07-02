@@ -1,0 +1,8 @@
+# Coding Agent — helps with programming tasks
+name: coding-agent
+model: deepseek-v4-pro                       # looked up in model_registry at runtime
+system_prompt_file: ../../prompts/system_prompt.txt  # relative to this YAML file
+max_turns: 1000
+tools:
+  - bash
+  - read_file
