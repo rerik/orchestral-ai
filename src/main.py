@@ -141,26 +141,31 @@ def call_llm(messages):
     
     
 # ---------------------------------------------------------
-#  AGENT LOOP
+#  CHAT LOOP
 # ---------------------------------------------------------
 
 
 MAX_TURNS = 1000
 
 
-def agent_loop(user_message: str) -> None:
-    messages: list[dict[str, object]] = [
-        {"role": "system", "content": SYSTEM_PROMPT}, 
-        {"role": "user", "content": user_message}
-    ]
+def agent_turn(messages: list, user_message: str) -> list:
+    """Append a user message and run the agent loop until no more tool calls.
+    
+    Returns the updated messages list.
+    """
+    messages.append({"role": "user", "content": user_message})
+    
     for _ in range(1, MAX_TURNS + 1):
         content, tool_calls = call_llm(messages)
+        
         if content:
             print(f"\n🤖 {content}")
+        
         if not tool_calls:
-            print("(no text output)" if not content else "")
-            print("✅ Agent finished")
-            return
+            if not content:
+                print("(no text output)")
+            print()
+            return messages
         
         assistant_msg = {"role": "assistant", "content": content or ""}
         if tool_calls:
@@ -182,14 +187,33 @@ def agent_loop(user_message: str) -> None:
                 "tool_call_id": tool_call_id, 
                 "content": result
             })
-            
+    
     print(f"\n⚠️ Max turns ({MAX_TURNS}) reached. Stopping.")
+    return messages
 
 
 if __name__ == "__main__":
-    # print(list(sys.argv))
-    prompt = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else ""
-    if not prompt.strip():
-        print("No task provided. Exiting.")
-        sys.exit(1)
-    agent_loop(prompt)
+    print("🤖 Coding Agent — Chat mode")
+    print("Type your task below. Type 'exit' or 'quit' to end the session.")
+    print()
+    
+    # Initialise conversation history with the system prompt
+    messages: list = [
+        {"role": "system", "content": SYSTEM_PROMPT}
+    ]
+    
+    while True:
+        try:
+            user_input = input("You: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n\n👋 Goodbye!")
+            sys.exit(0)
+        
+        if not user_input:
+            continue
+        
+        if user_input.lower() in ("exit", "quit"):
+            print("👋 Goodbye!")
+            break
+        
+        messages = agent_turn(messages, user_input)
