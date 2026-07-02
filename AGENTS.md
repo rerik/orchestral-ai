@@ -95,3 +95,17 @@ User input
 - **New model** — Add a YAML file in `configs/models/` and reference it from an agent config.
 - **New agent** — Add a YAML file in `configs/agents/` with a model reference, system prompt, and tool list.
 - **New tests** — Add test files under `tests/` following the existing patterns (one test file per source module, using pytest fixtures from `conftest.py`).
+
+## Maintenance Rules
+
+When making changes to the codebase, always update the following as needed:
+
+1. **Tests (`tests/`)** — Any new feature, bug fix, or behavioral change must be covered by tests. Add new test cases in the corresponding test file (`test_tools.py`, `test_model.py`, `test_agent.py`, `test_main.py`) or create a new test file for new modules. Run `pytest tests/ -v` to verify all tests pass before committing.
+
+2. **Documentation (`*.md`)** — Both `README.md` and `AGENTS.md` must stay in sync with the code:
+   - Update the **directory tree** if files are added, removed, or renamed.
+   - Update the **component descriptions** if behavior, parameters, or interfaces change.
+   - Update the **test coverage table** if the test suite changes significantly.
+   - Update the **configuration reference** if YAML keys are added, removed, or changed.
+
+3. **Requirements (`requirements.txt`)** — If new dependencies are introduced, add them to `requirements.txt`.
