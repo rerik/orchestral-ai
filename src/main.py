@@ -4,6 +4,7 @@ import re
 import json
 import sys
 import shutil
+import fnmatch
 
 import requests
 from dotenv import load_dotenv
@@ -100,15 +101,151 @@ def run_bash(command: str) -> str:
         return "Error: not allowed by user"
     except subprocess.TimeoutExpired:
         return "Error: command timed out after 120s"
-        
-        
+
+
+# ---------------------------------------------------------
+#  READ_FILE (secure file reader — blocks sensitive files)
+# ---------------------------------------------------------
+
+
+# Glob patterns for files that MUST NOT be read via this tool
+SENSITIVE_FILE_PATTERNS = [
+    ".env",
+    ".env.*",
+    "*.env",
+    "*secret*",
+    "*password*",
+    "*credential*",
+    "*token*",
+    "*apikey*",
+    "*api_key*",
+    "id_rsa",
+    "id_rsa.*",
+    "id_ed25519",
+    "id_ed25519.*",
+    "*.pem",
+    "*.key",
+    "*.cert",
+    "*.p12",
+    "*.pfx",
+    ".netrc",
+    ".git-credentials",
+    ".aws/credentials",
+    "*.kubeconfig",
+    "*.kube/config",
+    ".npmrc",
+    ".dockercfg",
+    ".docker/config.json",
+    "*.htpasswd",
+    "*.htaccess",  # often contains DB credentials
+    "config.yml",
+    "config.yaml",
+    "database.yml",
+    "database.yaml",
+    "secrets.yml",
+    "secrets.yaml",
+    "private*",
+    "*.keystore",
+    "*.jks",
+]
+
+# Also block by path segments containing well-known sensitive dirs
+SENSITIVE_DIR_SEGMENTS = [
+    ".git",
+    ".ssh",
+    ".gnupg",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "node_modules",
+]
+
+
+def _is_sensitive(filepath: str) -> bool:
+    """Check if a file path matches any sensitive pattern."""
+    # Normalise: resolve symlinks, get real absolute path
+    try:
+        real = os.path.realpath(filepath)
+    except Exception:
+        real = filepath
+
+    # Get the filename (base name) and the full path
+    basename = os.path.basename(real)
+    full = real
+
+    # Check against sensitive directory segments
+    parts = full.split(os.sep)
+    for seg in SENSITIVE_DIR_SEGMENTS:
+        if seg in parts:
+            return True
+
+    # Check filename against glob patterns
+    for pattern in SENSITIVE_FILE_PATTERNS:
+        # Match against basename
+        if fnmatch.fnmatch(basename, pattern):
+            return True
+        # Also match against the full path (for patterns like ".aws/credentials")
+        if fnmatch.fnmatch(full, f"*{pattern}"):
+            return True
+        # Match with wildcard prefix
+        if fnmatch.fnmatch(full, f"*/{pattern}"):
+            return True
+
+    return False
+
+
+def read_file(filepath: str, max_length: int = 100000) -> str:
+    """Read a file's contents. Blocks sensitive files (e.g. .env, secrets, keys)."""
+    # Resolve the path relative to CWD if it's not absolute
+    if not os.path.isabs(filepath):
+        resolved = os.path.join(os.getcwd(), filepath)
+    else:
+        resolved = filepath
+
+    # Normalise
+    resolved = os.path.normpath(resolved)
+
+    # Check if file exists
+    if not os.path.exists(resolved):
+        return f"Error: file not found: {filepath}"
+
+    # Check if it's a directory
+    if os.path.isdir(resolved):
+        return f"Error: path is a directory, not a file: {filepath}"
+
+    # Security check: block sensitive files
+    if _is_sensitive(resolved):
+        return f"Error: reading '{filepath}' is blocked — this file may contain sensitive data."
+
+    # Security check: block files that are too large (protect against DoS / accidental huge files)
+    try:
+        size = os.path.getsize(resolved)
+    except OSError as e:
+        return f"Error: cannot determine file size: {e}"
+    if size == 0:
+        return "(file is empty)"
+    if size > max_length:
+        return f"Error: file is {size} bytes (max allowed: {max_length}). Use a tool like `head -n 100 <file>` via bash instead."
+
+    # Read the file
+    try:
+        with open(resolved, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+        return content
+    except PermissionError:
+        return f"Error: permission denied reading: {filepath}"
+    except Exception as e:
+        return f"Error: could not read file '{filepath}': {e}"
+
+
 # ---------------------------------------------------------
 #  TOOLS
 # ---------------------------------------------------------
 
 
 TOOLS = {
-    "bash": run_bash
+    "bash": run_bash,
+    "read_file": read_file,
 }
 
 
@@ -120,14 +257,14 @@ def call_tool(name: str, arguments: dict) -> str:
         return func(**arguments)
     except Exception as e:
         return f"Error calling {name}: {e}"
-        
-        
+
+
 # ---------------------------------------------------------
 #  LLM
 # ---------------------------------------------------------
 
 
-# Load API key from environment (populated via .env by dotenv)
+# Load API key from environment (populated via .env by dotnet)
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 if not DEEPSEEK_API_KEY:
     print("ERROR: DEEPSEEK_API_KEY not found. Create a .env file in the project root with:")
@@ -142,20 +279,44 @@ LLM_HEADERS = {
 }
 
 
-LLM_TOOLS = [{
-    "type": "function",
-    "function": {
-        "name": "bash",
-        "description": "Execute a shell command and return the output.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "command": {"type": "string", "description": "The bash command to execute."}
-            },
-            "required": ["command"]
+LLM_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "bash",
+            "description": "Execute a shell command and return stdout/stderr. For general shell operations like listing files, running commands, writing files via heredoc, etc.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "The bash command to execute."}
+                },
+                "required": ["command"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Read the contents of a file. This is the PREFERRED tool for getting file contents. Use this instead of 'cat', 'head', 'tail' etc. in bash. NOTE: Sensitive files (e.g. .env, secrets, keys, credentials) are blocked for security.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filepath": {
+                        "type": "string",
+                        "description": "Path to the file (absolute, or relative to current working directory)."
+                    },
+                    "max_length": {
+                        "type": "integer",
+                        "description": "Maximum number of bytes to read (default 100000).",
+                        "default": 100000
+                    }
+                },
+                "required": ["filepath"]
+            }
         }
     }
-}]
+]
 
 
 # ---------------------------------------------------------
@@ -186,8 +347,8 @@ def call_llm(messages):
     content = (msg.get("content") or "").strip()
     tool_calls = msg.get("tool_calls") or []
     return content, tool_calls
-    
-    
+
+
 # ---------------------------------------------------------
 #  CHAT LOOP
 # ---------------------------------------------------------
