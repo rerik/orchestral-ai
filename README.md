@@ -19,6 +19,13 @@ smart_agent/
 │   ├── model.py                   # Model class — LLM configuration & chat completion
 │   ├── agent.py                   # Agent class — conversation loop & tool orchestration
 │   └── tools.py                   # Tool registry — bash & read_file implementations
+├── tests/
+│   ├── __init__.py
+│   ├── conftest.py                # Shared fixtures (temp_dir, temp_file)
+│   ├── test_main.py               # Tests for entry point & path resolution
+│   ├── test_model.py              # Tests for Model (YAML loading, chat API calls)
+│   ├── test_agent.py              # Tests for Agent (YAML loading, agent_turn, chat_loop)
+│   └── test_tools.py              # Tests for tools (allowlist, sensitive detection, bash, read_file)
 ├── requirements.txt
 └── README.md
 ```
@@ -31,6 +38,15 @@ smart_agent/
 | `src/model.py` | `Model` dataclass — encapsulates LLM provider settings (base URL, model ID, API key, temperature, etc.) and handles `/chat/completions` requests. Can be instantiated from a YAML file. |
 | `src/agent.py` | `Agent` dataclass — holds the system prompt, equipped tools, and max-turn limit. Runs the agent loop: sends user messages to the model, invokes tool calls, and returns results. Can be instantiated from a YAML file. |
 | `src/tools.py` | Tool registry. Defines two tools — **`bash`** (safe shell execution with an allowlist and user confirmation) and **`read_file`** (file reading with sensitive-file blocking). Each tool provides an LLM function schema and a handler. |
+
+### Test Suite
+
+| File | Coverage |
+|------|----------|
+| `tests/test_tools.py` | `_is_allowed`, `_is_sensitive`, `_check_bash_permission`, `read_file`, `run_bash`, `get_tool_schemas`, `call_tool`, `TOOL_REGISTRY` structure |
+| `tests/test_model.py` | `Model.from_yaml` (all parameters, env vars, headers, edge cases), `Model.chat` (payload construction, tool calls, auth headers, errors) |
+| `tests/test_agent.py` | `Agent.from_yaml` (model resolution — registry/path/inline, system prompt — literal/file/template, tools, validation), `agent_turn` (simple response, tool calls, max turns), `chat_loop` (quit/exit/EOF/KeyboardInterrupt, system prompt, empty input) |
+| `tests/test_main.py` | `resolve_path`, `main` (missing configs, successful run, default paths, model registry wiring) |
 
 ## 💡 How It Works
 
@@ -78,6 +94,14 @@ python src/main.py --model configs/models/deepseek.yaml --agent configs/agents/c
 ```
 
 Once started, the agent enters an interactive chat loop. Type your task and press Enter. Type `exit` or `quit` to end the session.
+
+### Running Tests
+
+```bash
+pytest tests/ -v
+```
+
+All 98 tests should pass. The test suite uses `pytest` with fixtures defined in `tests/conftest.py` (temporary directories, file helpers). External dependencies (API calls, user input, shell commands) are mocked via `unittest.mock`.
 
 ## ⚙️ Configuration Reference
 

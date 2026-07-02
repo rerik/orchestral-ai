@@ -19,6 +19,13 @@ smart_agent/
 │   ├── model.py                   # Model class — LLM config & chat completion
 │   ├── agent.py                   # Agent class — conversation loop & tool orchestration
 │   └── tools.py                   # Tool registry — bash & read_file implementations
+├── tests/
+│   ├── __init__.py                # Package marker
+│   ├── conftest.py                # Shared fixtures (temp_dir, temp_file)
+│   ├── test_main.py               # Tests for entry point & path resolution
+│   ├── test_model.py              # Tests for Model (YAML loading, chat API calls)
+│   ├── test_agent.py              # Tests for Agent (YAML loading, agent_turn, chat_loop)
+│   └── test_tools.py              # Tests for tools (allowlist, sensitive detection, bash, read_file)
 ├── requirements.txt
 ├── README.md
 └── AGENTS.md
@@ -47,12 +54,27 @@ Defines the tool registry (`TOOL_REGISTRY`) with two tools:
 
 Each tool entry provides both an LLM function schema and a Python handler function.
 
-### 5. Configuration (`configs/`)
+### 5. Tests (`tests/`)
+Comprehensive test suite covering all modules with **98 tests** across 4 files:
+
+| Test file | Coverage |
+|-----------|----------|
+| `test_tools.py` | `_is_allowed`, `_is_sensitive`, `_check_bash_permission`, `read_file`, `run_bash`, `get_tool_schemas`, `call_tool`, `TOOL_REGISTRY` structure |
+| `test_model.py` | `Model.from_yaml` (all parameters, env vars, headers, edge cases), `Model.chat` (payload construction, tool calls, auth headers, errors) |
+| `test_agent.py` | `Agent.from_yaml` (model resolution — registry/path/inline, system prompt — literal/file/template, tools, validation), `agent_turn` (simple response, tool calls, max turns), `chat_loop` (quit/exit/EOF/KeyboardInterrupt, system prompt, empty input) |
+| `test_main.py` | `resolve_path`, `main` (missing configs, successful run, default paths, model registry wiring) |
+
+Run tests with:
+```bash
+pytest tests/ -v
+```
+
+### 6. Configuration (`configs/`)
 YAML files that drive the entire framework without code changes:
 - **Model configs** (`configs/models/`) — Define LLM providers (base URL, model ID, API key env var, temperature, etc.).
 - **Agent configs** (`configs/agents/`) — Tie together a model, system prompt, and tool set.
 
-### 6. Prompts (`prompts/`)
+### 7. Prompts (`prompts/`)
 Contains the system prompt template (`system_prompt.txt`) that defines the agent's behavior, workflow, and constraints. The `{cwd}` placeholder is substituted at load time with the agent's working directory.
 
 ## Data Flow
@@ -72,3 +94,4 @@ User input
 - **New tool** — Define the schema + handler in `src/tools.py` and add it to `TOOL_REGISTRY`. Then reference it in an agent YAML's `tools` list.
 - **New model** — Add a YAML file in `configs/models/` and reference it from an agent config.
 - **New agent** — Add a YAML file in `configs/agents/` with a model reference, system prompt, and tool list.
+- **New tests** — Add test files under `tests/` following the existing patterns (one test file per source module, using pytest fixtures from `conftest.py`).
