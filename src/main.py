@@ -40,7 +40,9 @@ def check_bash_permission(cmd: str) -> bool:
     cmd_parts = [part.strip() for part in re.split(delimiters, cmd) if part.strip()]
     if all(map(is_allowed, cmd_parts)):
         return True
-    expliscit_permission: str = input(f"Execute `{cmd}`? y/n\n")
+    question = f"Execute `{cmd}`? y/n\n"
+    wrap = '# ' + '-' * (len(question) - 2)
+    expliscit_permission: str = input('\n' + wrap + '\n' + question + wrap + '\n')
     if expliscit_permission.lower() in ["y", "yes"]:
         return True
     return False
@@ -204,7 +206,7 @@ if __name__ == "__main__":
     
     while True:
         try:
-            user_input = input("You: ").strip()
+            user_input = input(">>> ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\n\n👋 Goodbye!")
             sys.exit(0)
