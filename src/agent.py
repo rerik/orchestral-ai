@@ -15,7 +15,7 @@ from typing import Any
 import yaml
 
 from model import Model
-from tools import get_tool_schemas, call_tool
+from tools import get_tool_schemas, call_tool, safe_json_loads
 
 
 @dataclass
@@ -149,6 +149,9 @@ class Agent:
             if not tool_calls:
                 if not content:
                     print("(no text output)")
+                else:
+                    # Append final assistant response so callers can capture it
+                    messages.append({"role": "assistant", "content": content})
                 print()
                 return messages
 
@@ -159,7 +162,7 @@ class Agent:
             prefix = "\n" if content else ""
             for tc in tool_calls:
                 func = tc["function"]["name"]
-                arguments = json.loads(tc["function"]["arguments"])
+                arguments = safe_json_loads(tc["function"]["arguments"])
                 tool_call_id = tc["id"]
 
                 print(f"{prefix}🔧 Tool: {func}({json.dumps(arguments, ensure_ascii=False)})")

@@ -1,13 +1,12 @@
 """
 Entry point for the smart-agent framework.
 
-Loads a Model and an Agent from YAML config files, then starts the
-interactive chat loop.
+Supports two modes:
+  1. Team mode (--team):    Multi-agent orchestration with a host + member agents
+  2. Single mode (--agent): Single agent chat (original behavior)
 
 Usage:
-    python src/main.py
-
-Or specify custom configs:
+    python src/main.py --team configs/team.yaml
     python src/main.py --model configs/models/deepseek.yaml \\
                        --agent configs/agents/coding_agent.yaml
 """
@@ -20,6 +19,7 @@ from dotenv import load_dotenv
 
 from model import Model
 from agent import Agent
+from team import Team
 
 # ---------------------------------------------------------------------------
 #  Default config paths (relative to the project root)
@@ -27,6 +27,7 @@ from agent import Agent
 
 DEFAULT_MODEL_YAML = "configs/models/deepseek.yaml"
 DEFAULT_AGENT_YAML = "configs/agents/coding_agent.yaml"
+DEFAULT_TEAM_YAML = "configs/team.yaml"
 
 
 def resolve_path(path: str) -> str:
@@ -37,25 +38,8 @@ def resolve_path(path: str) -> str:
     return os.path.normpath(os.path.join(root, path))
 
 
-def main() -> None:
-    load_dotenv()
-
-    parser = argparse.ArgumentParser(description="Smart Agent — configurable AI agent")
-    parser.add_argument(
-        "--model", "-m",
-        default=DEFAULT_MODEL_YAML,
-        help=f"Path to model YAML config (default: {DEFAULT_MODEL_YAML})",
-    )
-    parser.add_argument(
-        "--agent", "-a",
-        default=DEFAULT_AGENT_YAML,
-        help=f"Path to agent YAML config (default: {DEFAULT_AGENT_YAML})",
-    )
-    args = parser.parse_args()
-
-    model_path = resolve_path(args.model)
-    agent_path = resolve_path(args.agent)
-
+def run_single_agent(model_path: str, agent_path: str) -> None:
+    """Run a single agent in interactive chat mode."""
     # --- Load model ---
     if not os.path.isfile(model_path):
         print(f"ERROR: model config not found: {model_path}")
@@ -80,6 +64,67 @@ def main() -> None:
 
     # --- Start chat ---
     agent.chat_loop()
+
+
+def run_team(team_path: str) -> None:
+    """Run a multi-agent team in interactive chat mode."""
+    if not os.path.isfile(team_path):
+        print(f"ERROR: team config not found: {team_path}")
+        sys.exit(1)
+
+    print(f"👥 Loading team from: {team_path}")
+    team = Team.from_yaml(team_path)
+    print(f"   ✓ Team '{team.name}' loaded")
+    print(f"   ✓ Host: '{team.host_agent.name}' "
+          f"({team.host_agent.model.model_id})")
+    if team.member_agents:
+        for name, agent in team.member_agents.items():
+            print(f"   ✓ Member: '{name}' ({agent.model.model_id}) "
+                  f"tools: {agent.tool_names}")
+    else:
+        print("   ✓ Members: (none — host handles everything)")
+    print()
+
+    team.chat_loop()
+
+
+def main() -> None:
+    load_dotenv()
+
+    parser = argparse.ArgumentParser(
+        description="Smart Agent — configurable AI agent (single or multi-agent team)"
+    )
+    parser.add_argument(
+        "--team", "-t",
+        default=None,
+        help=f"Path to team YAML config (multi-agent mode). Default: {DEFAULT_TEAM_YAML}",
+    )
+    parser.add_argument(
+        "--model", "-m",
+        default=None,
+        help=f"Path to model YAML config (single-agent mode; default: {DEFAULT_MODEL_YAML})",
+    )
+    parser.add_argument(
+        "--agent", "-a",
+        default=None,
+        help=f"Path to agent YAML config (single-agent mode; default: {DEFAULT_AGENT_YAML})",
+    )
+    args = parser.parse_args()
+
+    # Determine mode: if --team is explicitly given, or if --agent is NOT given
+    # and the default team config exists, use team mode.
+    team_given = args.team is not None
+    agent_given = args.agent is not None
+
+    if team_given or not agent_given:
+        # Team mode
+        team_path = resolve_path(args.team or DEFAULT_TEAM_YAML)
+        run_team(team_path)
+    else:
+        # Single-agent mode (--agent was explicitly given without --team)
+        model_path = resolve_path(args.model or DEFAULT_MODEL_YAML)
+        agent_path = resolve_path(args.agent)
+        run_single_agent(model_path, agent_path)
 
 
 if __name__ == "__main__":

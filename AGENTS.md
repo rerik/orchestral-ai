@@ -8,16 +8,22 @@ This document outlines the structure and components of the Smart Agent framework
 smart_agent/
 ├── configs/
 │   ├── agents/
-│   │   └── coding_agent.yaml      # Agent config (model, tools, system prompt)
-│   └── models/
-│       └── deepseek.yaml          # Model config (API endpoint, params)
+│   │   ├── coding_agent.yaml      # Agent config (model, tools, system prompt)
+│   │   ├── host_agent.yaml        # Host agent config (team orchestrator)
+│   │   └── research_agent.yaml    # Research agent config (analysis & explanation)
+│   ├── models/
+│   │   └── deepseek.yaml          # Model config (API endpoint, params)
+│   └── team.yaml                  # Team config (host + member agents)
 ├── prompts/
-│   └── system_prompt.txt          # System prompt template
+│   ├── host_system_prompt.txt     # System prompt for the host agent
+│   ├── research_system_prompt.txt # System prompt for the research agent
+│   └── system_prompt.txt          # System prompt template (single agent)
 ├── src/
 │   ├── __init__.py                # Package marker
-│   ├── main.py                    # Entry point — argument parsing & orchestration
+│   ├── main.py                    # Entry point — CLI parsing, team vs single mode
 │   ├── model.py                   # Model class — LLM config & chat completion
 │   ├── agent.py                   # Agent class — conversation loop & tool orchestration
+│   ├── team.py                    # Team class — multi-agent orchestration
 │   └── tools.py                   # Tool registry — bash & read_file implementations
 ├── tests/
 │   ├── __init__.py                # Package marker
@@ -25,6 +31,7 @@ smart_agent/
 │   ├── test_main.py               # Tests for entry point & path resolution
 │   ├── test_model.py              # Tests for Model (YAML loading, chat API calls)
 │   ├── test_agent.py              # Tests for Agent (YAML loading, agent_turn, chat_loop)
+│   ├── test_team.py               # Tests for Team (config loading, delegation, chat loop)
 │   └── test_tools.py              # Tests for tools (allowlist, sensitive detection, bash, read_file)
 ├── requirements.txt
 ├── README.md
@@ -34,7 +41,11 @@ smart_agent/
 ## Components
 
 ### 1. Entry Point (`src/main.py`)
-Parses CLI arguments (`--model`, `--agent`), loads the Model and Agent from YAML config files, registers the model in a lookup table, and starts the interactive chat loop. It also resolves relative paths against the project root.
+Parses CLI arguments (`--team`, `--model`, `--agent`), supports two modes:
+- **Team mode** (`--team` flag or default): Loads a team config and runs multi-agent orchestration via the `Team` class.
+- **Single mode** (`--agent` flag): Loads a single Model and Agent from YAML config files, registers the model in a lookup table, and starts the interactive chat loop.
+
+It also resolves relative paths against the project root.
 
 ### 2. Model (`src/model.py`)
 A `Model` dataclass that encapsulates an LLM provider configuration:
@@ -47,21 +58,30 @@ An `Agent` dataclass that orchestrates the conversation:
 - **Agent loop** — `agent_turn(messages, user_message)` appends the user message, calls the model, executes any tool calls, and feeds results back until the model produces a final response or the turn limit is reached.
 - **Interactive chat** — `chat_loop()` provides a stdin/stdout REPL.
 
-### 4. Tools (`src/tools.py`)
+### 4. Team (`src/team.py`)
+A `Team` dataclass that orchestrates multi-agent collaboration:
+- **Team config** — Loaded from a YAML file defining a host agent and a list of member agents, each with a name, agent config path, and description.
+- **`from_yaml` factory** — Auto-loads all model configs into a registry, resolves agent paths relative to the project root, creates the host and all member agents, and injects member descriptions into the host's system prompt.
+- **Delegation tools** — Each member agent is exposed to the host as a dynamically-generated tool (`delegate_to_<name>`). The tool schema includes the member's description so the LLM knows when to use it.
+- **Host turn** — `_host_turn(messages, user_message)` extends the single-agent turn by combining the host's own tools with delegation tools. When a delegation tool is called, `_handle_delegation` runs the member agent on the subtask and returns its result.
+- **Interactive chat** — `chat_loop()` provides a REPL where the host orchestrates the team. If no member agents exist, the host handles everything itself.
+
+### 5. Tools (`src/tools.py`)
 Defines the tool registry (`TOOL_REGISTRY`) with two tools:
 - **`bash`** — Executes shell commands with an allowlist of safe utilities (`ls`, `grep`, `cat`, etc.). Commands outside the list require explicit user confirmation. Has a 120-second timeout.
 - **`read_file`** — Reads file contents. Blocks sensitive files (`.env`, keys, credentials, secrets, config YAMLs, etc.) and directories (`.git`, `.ssh`, `node_modules`, etc.).
 
 Each tool entry provides both an LLM function schema and a Python handler function.
 
-### 5. Tests (`tests/`)
-Comprehensive test suite covering all modules with **98 tests** across 4 files:
+### 6. Tests (`tests/`)
+Comprehensive test suite covering all modules across 5 files:
 
 | Test file | Coverage |
 |-----------|----------|
 | `test_tools.py` | `_is_allowed`, `_is_sensitive`, `_check_bash_permission`, `read_file`, `run_bash`, `get_tool_schemas`, `call_tool`, `TOOL_REGISTRY` structure |
 | `test_model.py` | `Model.from_yaml` (all parameters, env vars, headers, edge cases), `Model.chat` (payload construction, tool calls, auth headers, errors) |
 | `test_agent.py` | `Agent.from_yaml` (model resolution — registry/path/inline, system prompt — literal/file/template, tools, validation), `agent_turn` (simple response, tool calls, max turns), `chat_loop` (quit/exit/EOF/KeyboardInterrupt, system prompt, empty input) |
+| `test_team.py` | `Team.from_yaml` (team config loading, member descriptions, model registry, validation), delegation tools, host turn with delegation, chat loop |
 | `test_main.py` | `resolve_path`, `main` (missing configs, successful run, default paths, model registry wiring) |
 
 Run tests with:
@@ -69,16 +89,23 @@ Run tests with:
 pytest tests/ -v
 ```
 
-### 6. Configuration (`configs/`)
+### 7. Configuration (`configs/`)
 YAML files that drive the entire framework without code changes:
 - **Model configs** (`configs/models/`) — Define LLM providers (base URL, model ID, API key env var, temperature, etc.).
 - **Agent configs** (`configs/agents/`) — Tie together a model, system prompt, and tool set.
+- **Team config** (`configs/team.yaml`) — Defines a team with a host agent and member agents, each with a name, agent path, and description.
 
-### 7. Prompts (`prompts/`)
-Contains the system prompt template (`system_prompt.txt`) that defines the agent's behavior, workflow, and constraints. The `{cwd}` placeholder is substituted at load time with the agent's working directory.
+### 8. Prompts (`prompts/`)
+Contains system prompt templates that define agent behavior, workflow, and constraints:
+- `system_prompt.txt` — General-purpose single-agent prompt.
+- `host_system_prompt.txt` — Host agent prompt covering task analysis, decomposition, delegation, and synthesis.
+- `research_system_prompt.txt` — Research agent prompt for handling analysis and explanation subtasks.
+
+The `{cwd}` placeholder is substituted at load time with the agent's working directory.
 
 ## Data Flow
 
+### Single-Agent Mode
 ```
 User input
   → main.py (CLI parsing, config loading)
@@ -89,18 +116,31 @@ User input
         → loop until final response
 ```
 
+### Team Mode
+```
+User input
+  → main.py (CLI parsing, detects team vs single mode)
+    → Team.chat_loop()
+      → Team._host_turn(messages, user_input)
+        → Host Model.chat(messages, tools + delegation tools)
+        → (if delegation) Team._handle_delegation(agent_name, task)
+          → Member Agent.agent_turn(...)
+        → loop until host produces final response
+```
+
 ## Adding New Components
 
 - **New tool** — Define the schema + handler in `src/tools.py` and add it to `TOOL_REGISTRY`. Then reference it in an agent YAML's `tools` list.
 - **New model** — Add a YAML file in `configs/models/` and reference it from an agent config.
 - **New agent** — Add a YAML file in `configs/agents/` with a model reference, system prompt, and tool list.
+- **New team member agent** — Add the agent YAML in `configs/agents/`, add a system prompt in `prompts/`, then add an entry in `configs/team.yaml` under `agents` with the agent's name, config path, and description.
 - **New tests** — Add test files under `tests/` following the existing patterns (one test file per source module, using pytest fixtures from `conftest.py`).
 
 ## Maintenance Rules
 
 When making changes to the codebase, always update the following as needed:
 
-1. **Tests (`tests/`)** — Any new feature, bug fix, or behavioral change must be covered by tests. Add new test cases in the corresponding test file (`test_tools.py`, `test_model.py`, `test_agent.py`, `test_main.py`) or create a new test file for new modules. Run `pytest tests/ -v` to verify all tests pass before committing.
+1. **Tests (`tests/`)** — Any new feature, bug fix, or behavioral change must be covered by tests. Add new test cases in the corresponding test file (`test_tools.py`, `test_model.py`, `test_agent.py`, `test_team.py`, `test_main.py`) or create a new test file for new modules. Run `pytest tests/ -v` to verify all tests pass before committing.
 
 2. **Documentation (`*.md`)** — Both `README.md` and `AGENTS.md` must stay in sync with the code:
    - Update the **directory tree** if files are added, removed, or renamed.

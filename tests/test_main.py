@@ -37,7 +37,7 @@ class TestResolvePath:
 class TestMain:
     def test_missing_model_config(self, temp_dir, monkeypatch, capsys):
         """When model config doesn't exist, print error and exit."""
-        monkeypatch.setattr(sys, "argv", ["main", "--model", "/nonexistent/model.yaml"])
+        monkeypatch.setattr(sys, "argv", ["main", "--model", "/nonexistent/model.yaml", "--agent", "/nonexistent/agent.yaml"])
         with pytest.raises(SystemExit) as exc_info, \
              patch("builtins.print") as mock_print:
             main()
@@ -92,7 +92,7 @@ class TestMain:
 
     def test_default_config_paths(self, monkeypatch):
         """When no args given, default config paths are used."""
-        monkeypatch.setattr(sys, "argv", ["main"])
+        monkeypatch.setattr(sys, "argv", ["main", "--agent", "configs/agents/coding_agent.yaml"])
 
         # The default paths should exist in the project
         with patch("sys.exit") as mock_exit, \

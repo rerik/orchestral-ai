@@ -1,0 +1,8 @@
+# Research Agent — handles research, analysis, and explanation tasks
+name: researcher
+model: deepseek-v4-pro
+system_prompt_file: ../../prompts/research_system_prompt.txt
+max_turns: 500
+tools:
+  - bash
+  - read_file

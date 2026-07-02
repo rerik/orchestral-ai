@@ -260,9 +260,10 @@ class TestAgentTurn:
             # The user message should be appended
             assert result[0]["role"] == "user"
             assert result[0]["content"] == "Hi"
-            # Only the user message is in the returned list
-            # (final assistant response without tool_calls is not appended)
-            assert len(result) == 1
+            # The final assistant response is also appended
+            assert result[1]["role"] == "assistant"
+            assert result[1]["content"] == "Hello user!"
+            assert len(result) == 2
 
     def test_with_tool_call(self, agent):
         """When the model returns a tool call, it should be executed.
@@ -283,10 +284,10 @@ class TestAgentTurn:
 
             assert mock_chat.call_count == 2
 
-            # messages should contain: user, assistant (with tool_calls), tool
-            # The final "Done!" response (no tool_calls) is printed but NOT appended
+            # messages should contain: user, assistant (with tool_calls), tool,
+            # and the final assistant response is now also appended
             roles = [m["role"] for m in result]
-            assert roles == ["user", "assistant", "tool"]
+            assert roles == ["user", "assistant", "tool", "assistant"]
 
     def test_max_turns_limit(self, agent):
         """After max_turns, stop even if model keeps returning tool calls."""

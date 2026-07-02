@@ -1,0 +1,32 @@
+# ─── Smart Team Configuration ───────────────────────────────────────────────
+# Defines a team of agents. The host agent analyzes tasks, decomposes them
+# into subtasks, and delegates to specialized member agents when appropriate.
+# If the host is the only agent, it handles everything itself.
+# ────────────────────────────────────────────────────────────────────────────
+
+name: smart-team
+
+# ── Host agent ──────────────────────────────────────────────────────────────
+# The host is ALWAYS present. It analyzes incoming tasks, creates plans,
+# and delegates subtasks to member agents. After collecting results, it
+# synthesizes the final answer for the user.
+host:
+  agent: configs/agents/host_agent.yaml
+
+# ── Member agents ───────────────────────────────────────────────────────────
+# Each member agent has a name, a path to its agent config, and a description
+# of its purpose and abilities. The description is injected into the host's
+# system prompt so the host knows when to delegate.
+agents:
+  - name: coder
+    agent: configs/agents/coding_agent.yaml
+    description: >
+      Specialized in programming tasks: writing code, debugging,
+      refactoring, running shell commands, reading and writing files.
+
+  - name: researcher
+    agent: configs/agents/research_agent.yaml
+    description: >
+      Specialized in research, analysis, and explanation: summarizing
+      information, answering knowledge questions, analyzing data,
+      and explaining complex topics.

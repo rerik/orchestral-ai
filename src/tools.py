@@ -3,11 +3,144 @@ Tool definitions: each tool has a name, an LLM function schema,
 and a handler function.
 """
 
+import json
 import os
 import re
 import subprocess
 import shutil
 import fnmatch
+import sys
+
+
+
+# ---------------------------------------------------------------------------
+#  Safe JSON parsing — handles malformed LLM output
+# ---------------------------------------------------------------------------
+
+def safe_json_loads(raw: str) -> dict:
+    """Safely parse a JSON string that might be malformed (e.g. from an LLM).
+
+    Attempts to fix common errors:
+    - unterminated strings (appends closing quote)
+    - unclosed braces / brackets (appends missing closing chars)
+    - trailing commas (removes them before } or ] and at end of string)
+
+    Returns an empty dict if all recovery attempts fail.
+    """
+    raw = raw.strip()
+    if not raw:
+        return {}
+
+    # 1. Try direct parse
+    try:
+        result = json.loads(raw)
+        if isinstance(result, dict):
+            return result
+        # If it's a list, wrap it
+        return {"result": result}
+    except json.JSONDecodeError:
+        pass
+
+    # Helper: strip string contents to get structural skeleton
+    def _skeleton(s: str) -> str:
+        """Replace string contents with placeholders."""
+        out = []
+        i = 0
+        while i < len(s):
+            if s[i] == '"':
+                out.append('"')
+                i += 1
+                while i < len(s):
+                    if s[i] == '\\':
+                        out.append(s[i:i+2])
+                        i += 2
+                    elif s[i] == '"':
+                        out.append('"')
+                        i += 1
+                        break
+                    else:
+                        i += 1
+            else:
+                out.append(s[i])
+                i += 1
+        return ''.join(out)
+
+    # Collect fix candidates
+    candidates = []
+
+    # Fix A: unterminated string (append closing quote)
+    candidates.append(raw + '"')
+
+    # Fix B: close unclosed braces/brackets (strip trailing comma first)
+    skel = _skeleton(raw)
+    open_braces = skel.count('{') - skel.count('}')
+    open_brackets = skel.count('[') - skel.count(']')
+    if open_braces > 0 or open_brackets > 0:
+        closing = '}' * max(open_braces, 0) + ']' * max(open_brackets, 0)
+        # Try without stripping trailing comma
+        candidates.append(raw + closing)
+        candidates.append(raw + '"' + closing)
+        # Try stripping trailing comma before closing
+        trimmed = raw.rstrip()
+        if trimmed.endswith(','):
+            trimmed = trimmed[:-1]
+            candidates.append(trimmed + closing)
+            candidates.append(trimmed + '"' + closing)
+
+    # Fix C: trailing commas before } or ]
+    trailing_fixed = re.sub(r',\s*([}\]])', r'\1', raw)
+    if trailing_fixed != raw:
+        candidates.append(trailing_fixed)
+        # Also try: trailing commas + close braces
+        skel2 = _skeleton(trailing_fixed)
+        ob2 = skel2.count('{') - skel2.count('}')
+        obr2 = skel2.count('[') - skel2.count(']')
+        if ob2 > 0 or obr2 > 0:
+            candidates.append(trailing_fixed + '}' * max(ob2, 0) + ']' * max(obr2, 0))
+
+    # Fix D: trailing comma at end of string (not before } or ])
+    if raw.rstrip().endswith(','):
+        stripped = raw.rstrip()[:-1]
+        candidates.append(stripped)
+        # Also try: closing braces after stripping trailing comma
+        skel_s = _skeleton(stripped)
+        obs = skel_s.count('{') - skel_s.count('}')
+        obrs = skel_s.count('[') - skel_s.count(']')
+        if obs > 0 or obrs > 0:
+            candidates.append(stripped + '}' * max(obs, 0) + ']' * max(obrs, 0))
+        # And with closing quote
+        candidates.append(stripped + '"')
+        if obs > 0 or obrs > 0:
+            candidates.append(stripped + '"' + '}' * max(obs, 0) + ']' * max(obrs, 0))
+
+    # Fix E: combination of all fixes (trailing commas + close braces + close string)
+    combined = re.sub(r',\s*([}\]])', r'\1', raw)
+    if combined.rstrip().endswith(','):
+        combined = combined.rstrip()[:-1]
+    skel3 = _skeleton(combined)
+    ob3 = skel3.count('{') - skel3.count('}')
+    obr3 = skel3.count('[') - skel3.count(']')
+    if ob3 > 0 or obr3 > 0:
+        combined += '}' * max(ob3, 0) + ']' * max(obr3, 0)
+    candidates.append(combined)
+    candidates.append(combined + '"')
+
+    # Try all candidates
+    for candidate in candidates:
+        try:
+            result = json.loads(candidate)
+            if isinstance(result, dict):
+                return result
+            return {"result": result}
+        except json.JSONDecodeError:
+            continue
+
+    # All recovery attempts failed
+    print(
+        f"Warning: could not parse JSON arguments: {raw[:200]}...",
+        file=sys.stderr,
+    )
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -207,3 +340,4 @@ def call_tool(name: str, arguments: dict) -> str:
         return entry["handler"](**arguments)
     except Exception as e:
         return f"Error calling {name}: {e}"
+

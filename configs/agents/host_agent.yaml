@@ -1,0 +1,8 @@
+# Host Agent — orchestrates the team, decomposes tasks, delegates to members
+name: host
+model: deepseek-v4-pro
+system_prompt_file: ../../prompts/host_system_prompt.txt  # relative to this YAML
+max_turns: 1000
+tools:
+  - bash
+  - read_file
