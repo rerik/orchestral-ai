@@ -1,4 +1,4 @@
-# Smart Agent
+# Orchestral AI - Smart CLI Agent
 
 A modular, configurable AI agent framework that integrates with Large Language Models (LLMs) and external tools such as bash and file reading. The agent is driven entirely by YAML configuration files, making it easy to swap models, adjust tool sets, and customize behavior without modifying code.
 
