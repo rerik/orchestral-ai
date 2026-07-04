@@ -153,6 +153,7 @@ ALLOWED_CMD = [
     "echo", "printf",
     "which", "type", "command", "hash",
     "basename", "dirname", "realpath", "readlink",
+    "git status", "git log", "git diff", "git show",
 ]
 
 
