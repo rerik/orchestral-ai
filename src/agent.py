@@ -128,6 +128,18 @@ class Agent:
     #  Conversation
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _format_tool_call(func: str, arguments: dict) -> str:
+        """Return a human-readable tool call string based on the tool type."""
+        if func == "read_file":
+            return f"🔧 read_file: {arguments.get('filepath', arguments)}"
+        elif func == "bash":
+            return f"🔧 bash: {arguments.get('command', arguments)}"
+        elif func == "web_search":
+            return f"🔧 web_search: \"{arguments.get('query', arguments)}\""
+        else:
+            return f"🔧 Tool: {func}({json.dumps(arguments, ensure_ascii=False)})"
+
     def _get_tool_schemas(self) -> list[dict]:
         """Return the LLM tool schemas for this agent's tool set."""
         return get_tool_schemas(self.tool_names)
@@ -166,7 +178,7 @@ class Agent:
                     arguments = safe_json_loads(tc["function"]["arguments"])
                     tool_call_id = tc["id"]
 
-                    print(f"{prefix}🔧 Tool: {func}({json.dumps(arguments, ensure_ascii=False)})")
+                    print(f"{prefix}{Agent._format_tool_call(func, arguments)}")
                     result = call_tool(func, arguments)
                     print(f"   → {result[:500]}{'...' if len(result) > 500 else ''}")
 
