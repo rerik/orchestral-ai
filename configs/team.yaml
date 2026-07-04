@@ -18,11 +18,20 @@ host:
 # of its purpose and abilities. The description is injected into the host's
 # system prompt so the host knows when to delegate.
 agents:
-  - name: coder
-    agent: configs/agents/coding_agent.yaml
+  - name: coder_low
+    agent: configs/agents/coding_agent_low.yaml
     description: >
-      Specialized in programming tasks: writing code, debugging,
-      refactoring, running shell commands, reading and writing files.
+      Specialized in simple, straightforward programming tasks: basic scripts,
+      simple debugging, formatting, minor refactoring. Powered by a fast,
+      cost-effective model. Use this for routine coding work.
+
+  - name: coder_high
+    agent: configs/agents/coding_agent_high.yaml
+    description: >
+      Specialized in complex programming tasks: architecture design, hard
+      debugging, complex refactoring, performance optimization, security
+      reviews. Powered by a more capable model. Use this for challenging
+      coding work.
 
   - name: researcher
     agent: configs/agents/research_agent.yaml

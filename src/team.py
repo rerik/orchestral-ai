@@ -109,7 +109,12 @@ class Team:
 
             agent = Agent.from_yaml(agent_path, model_registry=model_registry)
             member_agents[name] = agent
-            member_descriptions[name] = description
+            cost = agent.model.cost_coefficient
+            if cost != 1.0:
+                cost_note = f" [Model cost coefficient: {cost}]"
+                member_descriptions[name] = description + cost_note
+            else:
+                member_descriptions[name] = description
 
         # --- Inject member agent descriptions into host system prompt ---
         team = cls(
@@ -125,6 +130,7 @@ class Team:
     #  Member description injection
     # ------------------------------------------------------------------
 
+    # Note: descriptions now include cost coefficient info where applicable.
     def _inject_member_descriptions(self, descriptions: dict[str, str]) -> None:
         """Append member agent descriptions to the host's system prompt."""
         if not descriptions:

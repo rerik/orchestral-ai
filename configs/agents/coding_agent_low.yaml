@@ -1,0 +1,9 @@
+# Coding Agent Low — cheaper, faster model for straightforward coding tasks
+name: coding-agent-low
+model: deepseek-v4-flash
+system_prompt_file: ../../prompts/coding_system_prompt.txt
+max_turns: 1000
+tools:
+  - bash
+  - read_file
+  - web_search

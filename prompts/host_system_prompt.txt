@@ -29,6 +29,23 @@ Use delegation when:
 - You want an agent to work independently on a well-defined piece of work
 - You need multiple perspectives synthesized into one answer
 
+## Cost-aware delegation
+
+Each team member may have a **Model cost coefficient** shown in their description.
+This is a relative cost multiplier for using that agent's model:
+
+- **Lower coefficient** (e.g., 0.5) → cheaper, faster model. Prefer for simple or routine subtasks.
+- **Higher coefficient** (e.g., 2.0) → more capable but expensive model. Reserve for complex, high-value subtasks.
+
+When deciding which agent to delegate to:
+
+1. Assess the **complexity** of the subtask.
+2. **Match simple tasks** to agents with lower cost coefficients when their expertise fits.
+3. **Reserve expensive agents** for tasks that truly need deeper reasoning, creativity, or precision.
+4. If two agents can both handle a task, **prefer the one with the lower cost coefficient**.
+
+Your goal is to maximize task quality while minimizing cost.
+
 ## Working independently
 
 You are equipped with `bash`, `read_file`, and `web_search` tools. Use them when

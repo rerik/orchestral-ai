@@ -28,6 +28,7 @@ class Model:
     temperature: float = 0.1
     max_tokens: int = 4096
     extra_headers: dict[str, str] = field(default_factory=dict)
+    cost_coefficient: float = 1.0
 
     # ------------------------------------------------------------------
     #  Factory: build from a YAML file
@@ -86,6 +87,7 @@ class Model:
             temperature=float(data.get("temperature", 0.1)),
             max_tokens=int(data.get("max_tokens", 4096)),
             extra_headers=headers,
+            cost_coefficient=float(data.get("cost_coefficient", 1.0)),
         )
 
     # ------------------------------------------------------------------
