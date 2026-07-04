@@ -265,6 +265,51 @@ def read_file(filepath: str, max_length: int = 100000) -> str:
 
 
 # ---------------------------------------------------------------------------
+#  Tool: web_search
+# ---------------------------------------------------------------------------
+
+def web_search(query: str, max_results: int = 10) -> str:
+    """Search the web using DuckDuckGo and return formatted results.
+
+    Args:
+        query: The search query string.
+        max_results: Maximum number of results to return (default 10, max 20).
+
+    Returns a formatted string with title, URL, and snippet for each result.
+    """
+    max_results = max(1, min(max_results, 20))
+
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        return (
+            "Error: the 'ddgs' package is required for web search. "
+            "Install it with: pip install ddgs"
+        )
+
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=max_results))
+    except Exception as e:
+        return f"Error performing web search: {type(e).__name__}: {e}"
+
+    if not results:
+        return f"No results found for query: '{query}'"
+
+    lines = [f"Web search results for: '{query}'", ""]
+    for i, r in enumerate(results, 1):
+        title = r.get("title", "No title")
+        url = r.get("href", "No URL")
+        body = r.get("body", "No description")
+        lines.append(f"{i}. {title}")
+        lines.append(f"   URL: {url}")
+        lines.append(f"   {body}")
+        lines.append("")
+
+    return "\n".join(lines).strip()
+
+
+# ---------------------------------------------------------------------------
 #  Tool registry
 # ---------------------------------------------------------------------------
 
@@ -324,6 +369,35 @@ TOOL_REGISTRY: dict[str, dict] = {
         },
         "handler": read_file,
     },
+    "web_search": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "web_search",
+                "description": (
+                    "Search the web for information using DuckDuckGo. "
+                    "Use this to find current information, documentation, "
+                    "news, or any knowledge not already in your training data."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The search query string.",
+                        },
+                        "max_results": {
+                            "type": "integer",
+                            "description": "Maximum number of results to return (default 10, max 20).",
+                            "default": 10,
+                        },
+                    },
+                    "required": ["query"],
+                },
+            },
+        },
+        "handler": web_search,
+    },
 }
 
 
@@ -341,4 +415,3 @@ def call_tool(name: str, arguments: dict) -> str:
         return entry["handler"](**arguments)
     except Exception as e:
         return f"Error calling {name}: {e}"
-

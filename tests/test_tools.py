@@ -280,3 +280,70 @@ class TestCallTool:
         with patch.object(tools, "_check_bash_permission", return_value=True):
             result = call_tool("bash", {})
             assert "Error calling bash" in result
+
+
+# ============================================================================
+#  web_search
+# ============================================================================
+
+class TestWebSearch:
+    def test_returns_results_for_valid_query(self):
+        """A valid query should return formatted results."""
+        result = call_tool("web_search", {"query": "Python programming", "max_results": 2})
+        assert "Web search results for: 'Python programming'" in result
+        assert "URL:" in result
+        # Should have at least one numbered result
+        assert "1." in result
+
+    def test_respects_max_results(self):
+        """max_results should limit the number of results."""
+        result = call_tool("web_search", {"query": "weather", "max_results": 1})
+        # Only result #1 should be present, #2 should not
+        assert "1." in result
+        assert "\n2." not in result
+
+    def test_clamps_max_results_to_20(self):
+        """max_results above 20 should be clamped."""
+        # Just test that it doesn't crash and still works
+        result = call_tool("web_search", {"query": "test", "max_results": 100})
+        assert "Web search results for: 'test'" in result
+
+    def test_empty_query_handled(self):
+        """An empty query should not crash."""
+        result = call_tool("web_search", {"query": ""})
+        # Should return either results or a "no results" message
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_no_results_query(self):
+        """An extremely specific nonsense query may return no results."""
+        result = call_tool("web_search", {"query": "xyzkkwwqqppzz1234567890abcdeffoo"})
+        # Should not crash, should return something
+        assert isinstance(result, str)
+
+    def test_web_search_in_registry(self):
+        """web_search should be in TOOL_REGISTRY with schema and handler."""
+        assert "web_search" in TOOL_REGISTRY
+        entry = TOOL_REGISTRY["web_search"]
+        assert "schema" in entry
+        assert "handler" in entry
+        assert entry["schema"]["function"]["name"] == "web_search"
+        assert callable(entry["handler"])
+
+    def test_web_search_schema_requires_query(self):
+        """The web_search schema should require 'query'."""
+        required = TOOL_REGISTRY["web_search"]["schema"]["function"]["parameters"]["required"]
+        assert "query" in required
+
+
+# ============================================================================
+#  Updated: TOOL_REGISTRY now has 3 tools
+# ============================================================================
+
+class TestToolRegistryUpdated:
+    def test_has_three_tools(self):
+        """TOOL_REGISTRY should now contain bash, read_file, and web_search."""
+        assert "bash" in TOOL_REGISTRY
+        assert "read_file" in TOOL_REGISTRY
+        assert "web_search" in TOOL_REGISTRY
+        assert len(TOOL_REGISTRY) == 3

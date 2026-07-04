@@ -6,3 +6,4 @@ max_turns: 500
 tools:
   - bash
   - read_file
+  - web_search
