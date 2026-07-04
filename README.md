@@ -10,13 +10,16 @@ Supports both **single-agent** and **multi-agent team** modes — the team mode 
 smart_agent/
 ├── configs/
 │   ├── agents/
-│   │   ├── coding_agent.yaml      # Agent config (model, tools, system prompt)
-│   │   ├── host_agent.yaml        # Host agent config (team orchestrator)
-│   │   └── research_agent.yaml    # Research agent config (analysis & explanation)
+│   │   ├── coding_agent.yaml          # Agent config (model, tools, system prompt)
+│   │   ├── coding_agent_low.yaml      # Cheaper, faster model for simple coding tasks
+│   │   ├── coding_agent_high.yaml     # More capable model for complex coding tasks
+│   │   ├── host_agent.yaml            # Host agent config (team orchestrator)
+│   │   └── research_agent.yaml        # Research agent config (analysis & explanation)
 │   ├── models/
 │   │   └── deepseek.yaml          # Model config (API endpoint, params)
 │   └── team.yaml                  # Team config (host + member agents)
 ├── prompts/
+│   ├── coding_system_prompt.txt   # System prompt for coding agents
 │   ├── host_system_prompt.txt     # System prompt for the host agent
 │   ├── research_system_prompt.txt # System prompt for the research agent
 │   └── system_prompt.txt          # System prompt template (single agent)
@@ -47,13 +50,13 @@ smart_agent/
 | `src/model.py` | `Model` dataclass — encapsulates LLM provider settings (base URL, model ID, API key, temperature, etc.) and handles `/chat/completions` requests. Can be instantiated from a YAML file. |
 | `src/agent.py` | `Agent` dataclass — holds the system prompt, equipped tools, and max-turn limit. Runs the agent loop: sends user messages to the model, invokes tool calls, and returns results. Can be instantiated from a YAML file. |
 | `src/team.py` | Team orchestration — loads team config, creates host + member agents, injects delegation tools into the host, and runs the multi-agent chat loop. The host analyzes tasks, delegates subtasks to members, and synthesizes results. |
-| `src/tools.py` | Tool registry. Defines two tools — **`bash`** (safe shell execution with an allowlist and user confirmation) and **`read_file`** (file reading with sensitive-file blocking). Each tool provides an LLM function schema and a handler. |
+| `src/tools.py` | Tool registry. Defines four tools — **`bash`** (safe shell execution with an allowlist and user confirmation), **`read_file`** (file reading with sensitive-file blocking), **`web_search`** (DuckDuckGo web search), and **`edit_file`** (exact-string find-and-replace with diff preview and confirmation). Each tool provides an LLM function schema and a handler. |
 
 ### Test Suite
 
 | File | Coverage |
 |------|----------|
-| `tests/test_tools.py` | `_is_allowed`, `_is_sensitive`, `_check_bash_permission`, `read_file`, `run_bash`, `get_tool_schemas`, `call_tool`, `TOOL_REGISTRY` structure |
+| `tests/test_tools.py` | `_is_allowed`, `_is_sensitive`, `_check_bash_permission`, `read_file`, `run_bash`, `get_tool_schemas`, `call_tool`, `TOOL_REGISTRY` structure, `web_search`, `edit_file` |
 | `tests/test_model.py` | `Model.from_yaml` (all parameters, env vars, headers, edge cases), `Model.chat` (payload construction, tool calls, auth headers, errors) |
 | `tests/test_agent.py` | `Agent.from_yaml` (model resolution — registry/path/inline, system prompt — literal/file/template, tools, validation), `agent_turn` (simple response, tool calls, max turns), `chat_loop` (quit/exit/EOF/KeyboardInterrupt, system prompt, empty input) |
 | `tests/test_team.py` | `Team.from_yaml` (team config loading, member descriptions, model registry, validation), delegation tools, host turn with delegation, chat loop |
@@ -145,6 +148,7 @@ model_id: deepseek-v4-pro      # Model identifier sent to the API
 api_key_env: DEEPSEEK_API_KEY  # Env var holding the API key
 temperature: 0.1               # Response randomness (0.0 – 1.0)
 max_tokens: 4096               # Max output tokens
+cost_coefficient: 2.0          # Relative cost multiplier for delegation decisions
 headers:                       # Extra HTTP headers
   Content-Type: application/json
 ```
@@ -159,6 +163,7 @@ max_turns: 1000                        # Max LLM calls per user turn
 tools:                                 # Tool names to equip
   - bash
   - read_file
+  - web_search
 ```
 
 You can also specify `system_prompt` inline (as a string) instead of `system_prompt_file`. If both are given, `system_prompt` takes precedence.
@@ -172,11 +177,20 @@ host:                                # Host agent (orchestrator)
   agent: configs/agents/host_agent.yaml
 
 agents:                              # Member agents (specialists)
-  - name: coder                      # Agent name (used in delegation tool)
-    agent: configs/agents/coding_agent.yaml
+  - name: coder_low                  # Agent name (used in delegation tool)
+    agent: configs/agents/coding_agent_low.yaml
     description: >                   # Description injected into host prompt
-      Specialized in programming tasks: writing code, debugging,
-      refactoring, running shell commands, reading and writing files.
+      Specialized in simple, straightforward programming tasks: basic
+      scripts, simple debugging, formatting, minor refactoring. Powered
+      by a fast, cost-effective model. Use this for routine coding work.
+
+  - name: coder_high
+    agent: configs/agents/coding_agent_high.yaml
+    description: >
+      Specialized in complex programming tasks: architecture design,
+      hard debugging, complex refactoring, performance optimization,
+      security reviews. Powered by a more capable model. Use this for
+      challenging coding work.
 
   - name: researcher
     agent: configs/agents/research_agent.yaml
@@ -194,5 +208,7 @@ The host agent is always present. Member agents are optional — if none are def
 |------|-------------|
 | `bash` | Execute shell commands (allowlist-based, with user confirmation for untrusted commands) |
 | `read_file` | Read file contents (blocked for sensitive files like `.env`, keys, secrets) |
+| `web_search` | Search the web using DuckDuckGo for current information, documentation, and news |
+| `edit_file` | Find-and-replace exact string in a file, with diff preview and user confirmation |
 
 To add new tools, define them in `src/tools.py` (schema + handler) and register them in `TOOL_REGISTRY`.

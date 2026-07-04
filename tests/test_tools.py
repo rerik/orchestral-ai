@@ -13,6 +13,7 @@ from tools import (
     _is_sensitive,
     read_file,
     run_bash,
+    edit_file,
     get_tool_schemas,
     call_tool,
     TOOL_REGISTRY,
@@ -282,6 +283,113 @@ class TestCallTool:
             assert "Error calling bash" in result
 
 
+
+
+# ============================================================================
+#  edit_file
+# ============================================================================
+
+class TestEditFile:
+    def test_file_not_found(self):
+        """Calling edit_file on a nonexistent path returns 'Error: file not found'."""
+        result = edit_file("/nonexistent/path/file.txt", old_string="foo", new_string="bar")
+        assert result.startswith("Error: file not found")
+
+    def test_directory_not_file(self, temp_dir):
+        """Calling edit_file on a directory returns 'is a directory' error."""
+        result = edit_file(temp_dir, old_string="foo", new_string="bar")
+        assert "is a directory" in result
+
+    def test_no_changes_needed(self, temp_file):
+        """When old_string and new_string are identical, returns appropriate message."""
+        path = temp_file("nochange.txt", "hello world")
+        result = edit_file(path, old_string="hello", new_string="hello")
+        assert "No changes to apply" in result
+        assert "old_string and new_string are identical" in result
+
+    def test_user_rejects(self, temp_file):
+        """Mock input to return 'n', verify the file is NOT modified and 'Edit rejected by user' is returned."""
+        path = temp_file("reject.txt", "hello world")
+        with patch("builtins.input", return_value="n"):
+            result = edit_file(path, old_string="world", new_string="everyone")
+        assert result == "Edit rejected by user."
+        # Verify file was NOT modified
+        with open(path, "r") as f:
+            assert f.read() == "hello world"
+
+    def test_user_accepts(self, temp_file):
+        """Mock input to return 'y', verify the file IS written with new content and success message."""
+        path = temp_file("accept.txt", "hello world")
+        with patch("builtins.input", return_value="y"):
+            result = edit_file(path, old_string="world", new_string="everyone")
+        assert "Successfully edited" in result
+        # Verify file was modified
+        with open(path, "r") as f:
+            assert f.read() == "hello everyone"
+
+    def test_old_string_not_found(self, temp_file):
+        """When old_string does not exist in the file, return appropriate error."""
+        path = temp_file("notfound.txt", "hello world")
+        result = edit_file(path, old_string="xyz", new_string="abc")
+        assert result == "Error: old_string not found in file."
+
+    def test_file_to_empty(self, temp_file):
+        """Replacing the entire file content with empty string works."""
+        path = temp_file("to_empty.txt", "remove me please")
+        with patch("builtins.input", return_value="y"):
+            result = edit_file(path, old_string="remove me please", new_string="")
+        assert "Successfully edited" in result
+        with open(path, "r") as f:
+            assert f.read() == ""
+
+    def test_old_string_empty_error(self, temp_file):
+        """Calling edit_file with empty old_string returns an error."""
+        path = temp_file("empty_old.txt", "anything")
+        result = edit_file(path, old_string="", new_string="anything")
+        assert result == "Error: old_string must not be empty."
+
+    def test_multiple_occurrences_error(self, temp_file):
+        """When old_string appears multiple times, return an error mentioning appearances."""
+        path = temp_file("multiple.txt", "the cat and the cat played")
+        result = edit_file(path, old_string="cat", new_string="dog")
+        assert "appears" in result
+        assert "times" in result
+
+    def test_edit_file_in_registry(self):
+        """Assert edit_file in TOOL_REGISTRY with proper schema and callable handler."""
+        assert "edit_file" in TOOL_REGISTRY
+        entry = TOOL_REGISTRY["edit_file"]
+        assert "schema" in entry
+        assert "handler" in entry
+        assert entry["schema"]["function"]["name"] == "edit_file"
+        assert callable(entry["handler"])
+
+    def test_edit_file_schema_requires_filepath_old_string_new_string(self):
+        """Assert filepath, old_string, and new_string are all in the required params."""
+        required = TOOL_REGISTRY["edit_file"]["schema"]["function"]["parameters"]["required"]
+        assert "filepath" in required
+        assert "old_string" in required
+        assert "new_string" in required
+
+    def test_call_edit_file_via_call_tool(self, temp_file):
+        """Use call_tool('edit_file', ...) path, mock input to 'y', verify it works."""
+        path = temp_file("call_tool_edit.txt", "hello world")
+        with patch("builtins.input", return_value="y"):
+            result = call_tool("edit_file", {"filepath": path, "old_string": "world", "new_string": "everyone"})
+        assert "Successfully edited" in result
+        with open(path, "r") as f:
+            assert f.read() == "hello everyone"
+
+    def test_old_string_unique_match(self, temp_file):
+        """Replace a unique substring and verify file content changes correctly."""
+        path = temp_file("unique.txt", "hello beautiful world")
+        with patch("builtins.input", return_value="y"):
+            result = edit_file(path, old_string="beautiful ", new_string="")
+        assert "Successfully edited" in result
+        with open(path, "r") as f:
+            assert f.read() == "hello world"
+
+
 # ============================================================================
 #  web_search
 # ============================================================================
@@ -337,13 +445,17 @@ class TestWebSearch:
 
 
 # ============================================================================
-#  Updated: TOOL_REGISTRY now has 3 tools
+#  Updated: TOOL_REGISTRY now has 4 tools
 # ============================================================================
 
 class TestToolRegistryUpdated:
-    def test_has_three_tools(self):
-        """TOOL_REGISTRY should now contain bash, read_file, and web_search."""
+    def test_has_four_tools(self):
+        """TOOL_REGISTRY should now contain bash, read_file, web_search, and edit_file."""
         assert "bash" in TOOL_REGISTRY
         assert "read_file" in TOOL_REGISTRY
         assert "web_search" in TOOL_REGISTRY
-        assert len(TOOL_REGISTRY) == 3
+        assert "edit_file" in TOOL_REGISTRY
+        assert len(TOOL_REGISTRY) == 4
+
+
+# ============================================================================

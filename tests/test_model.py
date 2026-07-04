@@ -173,6 +173,36 @@ class TestModelFromYaml:
         model = Model.from_yaml(yaml_path)
         assert model.base_url == "https://api.example.com"
 
+    def test_cost_coefficient_default_and_custom(self, temp_dir):
+        """cost_coefficient defaults to 1.0 but can be overridden."""
+        yaml_path = os.path.join(temp_dir, "model.yaml")
+        _write_yaml(yaml_path, {
+            "name": "test",
+            "base_url": "https://api.example.com",
+            "model_id": "v1",
+        })
+        model = Model.from_yaml(yaml_path)
+        assert model.cost_coefficient == 1.0  # default
+
+        _write_yaml(yaml_path, {
+            "name": "test",
+            "base_url": "https://api.example.com",
+            "model_id": "v1",
+            "cost_coefficient": 0.5,
+        })
+        model = Model.from_yaml(yaml_path)
+        assert model.cost_coefficient == 0.5
+
+        _write_yaml(yaml_path, {
+            "name": "test",
+            "base_url": "https://api.example.com",
+            "model_id": "v1",
+            "cost_coefficient": 2.0,
+        })
+        model = Model.from_yaml(yaml_path)
+        assert model.cost_coefficient == 2.0
+
+
 
 # ============================================================================
 #  Model.chat

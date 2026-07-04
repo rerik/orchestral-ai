@@ -7,3 +7,4 @@ tools:
   - bash
   - read_file
   - web_search
+  - edit_file

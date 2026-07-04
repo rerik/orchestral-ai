@@ -8,13 +8,16 @@ This document outlines the structure and components of the Smart Agent framework
 smart_agent/
 ├── configs/
 │   ├── agents/
-│   │   ├── coding_agent.yaml      # Agent config (model, tools, system prompt)
-│   │   ├── host_agent.yaml        # Host agent config (team orchestrator)
-│   │   └── research_agent.yaml    # Research agent config (analysis & explanation)
+│   │   ├── coding_agent.yaml          # Agent config (model, tools, system prompt)
+│   │   ├── coding_agent_low.yaml      # Cheaper, faster model for simple coding tasks
+│   │   ├── coding_agent_high.yaml     # More capable model for complex coding tasks
+│   │   ├── host_agent.yaml            # Host agent config (team orchestrator)
+│   │   └── research_agent.yaml        # Research agent config (analysis & explanation)
 │   ├── models/
 │   │   └── deepseek.yaml          # Model config (API endpoint, params)
 │   └── team.yaml                  # Team config (host + member agents)
 ├── prompts/
+│   ├── coding_system_prompt.txt   # System prompt for coding agents
 │   ├── host_system_prompt.txt     # System prompt for the host agent
 │   ├── research_system_prompt.txt # System prompt for the research agent
 │   └── system_prompt.txt          # System prompt template (single agent)
@@ -67,9 +70,11 @@ A `Team` dataclass that orchestrates multi-agent collaboration:
 - **Interactive chat** — `chat_loop()` provides a REPL where the host orchestrates the team. If no member agents exist, the host handles everything itself.
 
 ### 5. Tools (`src/tools.py`)
-Defines the tool registry (`TOOL_REGISTRY`) with two tools:
+Defines the tool registry (`TOOL_REGISTRY`) with four tools:
 - **`bash`** — Executes shell commands with an allowlist of safe utilities (`ls`, `grep`, `cat`, etc.). Commands outside the list require explicit user confirmation. Has a 120-second timeout.
 - **`read_file`** — Reads file contents. Blocks sensitive files (`.env`, keys, credentials, secrets, config YAMLs, etc.) and directories (`.git`, `.ssh`, `node_modules`, etc.).
+- **`web_search`** — Searches the web using DuckDuckGo. Returns formatted results with titles, URLs, and snippets.
+- **`edit_file`** — Edits files by exact-string find-and-replace. Shows a unified diff and asks for user confirmation. Rejects edits when `old_string` appears multiple times.
 
 Each tool entry provides both an LLM function schema and a Python handler function.
 
@@ -78,7 +83,7 @@ Comprehensive test suite covering all modules across 5 files:
 
 | Test file | Coverage |
 |-----------|----------|
-| `test_tools.py` | `_is_allowed`, `_is_sensitive`, `_check_bash_permission`, `read_file`, `run_bash`, `get_tool_schemas`, `call_tool`, `TOOL_REGISTRY` structure |
+| `test_tools.py` | `_is_allowed`, `_is_sensitive`, `_check_bash_permission`, `read_file`, `run_bash`, `get_tool_schemas`, `call_tool`, `TOOL_REGISTRY` structure, `web_search`, `edit_file` |
 | `test_model.py` | `Model.from_yaml` (all parameters, env vars, headers, edge cases), `Model.chat` (payload construction, tool calls, auth headers, errors) |
 | `test_agent.py` | `Agent.from_yaml` (model resolution — registry/path/inline, system prompt — literal/file/template, tools, validation), `agent_turn` (simple response, tool calls, max turns), `chat_loop` (quit/exit/EOF/KeyboardInterrupt, system prompt, empty input) |
 | `test_team.py` | `Team.from_yaml` (team config loading, member descriptions, model registry, validation), delegation tools, host turn with delegation, chat loop |
@@ -91,13 +96,14 @@ pytest tests/ -v
 
 ### 7. Configuration (`configs/`)
 YAML files that drive the entire framework without code changes:
-- **Model configs** (`configs/models/`) — Define LLM providers (base URL, model ID, API key env var, temperature, etc.).
+- **Model configs** (`configs/models/`) — Define LLM providers (base URL, model ID, API key env var, temperature, cost coefficient, etc.).
 - **Agent configs** (`configs/agents/`) — Tie together a model, system prompt, and tool set.
 - **Team config** (`configs/team.yaml`) — Defines a team with a host agent and member agents, each with a name, agent path, and description.
 
 ### 8. Prompts (`prompts/`)
 Contains system prompt templates that define agent behavior, workflow, and constraints:
 - `system_prompt.txt` — General-purpose single-agent prompt.
+- `coding_system_prompt.txt` — Coding agent prompt covering tool usage, workflow, and file writing best practices.
 - `host_system_prompt.txt` — Host agent prompt covering task analysis, decomposition, delegation, and synthesis.
 - `research_system_prompt.txt` — Research agent prompt for handling analysis and explanation subtasks.
 

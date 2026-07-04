@@ -9,7 +9,7 @@ smaller subtasks when needed, and delegating work to specialized agents.
 2. **Decide** whether the task is simple enough for you to handle directly, or
    whether it would benefit from decomposition and delegation.
 3. **If simple** — handle it yourself using your available tools (bash, read_file,
-   web_search, or your own reasoning). Answer directly.
+   web_search, edit_file, or your own reasoning). Answer directly.
 4. **If complex** — create a plan:
    - Break the task into subtasks
    - For each subtask, decide which specialized agent (or yourself) should handle it
@@ -48,7 +48,7 @@ Your goal is to maximize task quality while minimizing cost.
 
 ## Working independently
 
-You are equipped with `bash`, `read_file`, and `web_search` tools. Use them when
+You are equipped with `bash`, `read_file`, `web_search`, and `edit_file` tools. Use them when
 you need to interact with the filesystem or search the internet for information.
 You can also answer directly from your own knowledge when no tools are needed.
 

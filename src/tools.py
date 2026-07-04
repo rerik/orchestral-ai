@@ -10,6 +10,9 @@ import subprocess
 import shutil
 import fnmatch
 import sys
+import difflib
+import tempfile
+
 
 
 
@@ -310,6 +313,201 @@ def web_search(query: str, max_results: int = 10) -> str:
     return "\n".join(lines).strip()
 
 
+
+# ---------------------------------------------------------------------------
+#  Tool: edit_file
+# ---------------------------------------------------------------------------
+
+
+def _count_diff_stats(diff_lines: list[str]) -> tuple[int, int]:
+    """Count lines added (+) and removed (-) from a unified diff (ignoring header/metadata)."""
+    added = 0
+    removed = 0
+    for line in diff_lines:
+        if line.startswith("+") and not line.startswith("+++"):
+            added += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            removed += 1
+    return added, removed
+
+
+def _show_occurrences(filepath: str, content: str, old_string: str, occurrences: list[int]) -> str:
+    """Format an error message with line-numbered context for each occurrence of old_string."""
+    context_lines = 2  # lines of context before and after
+    file_lines = content.splitlines(keepends=True)
+    # Build line start offsets for mapping positions to line numbers
+    line_starts = [0]
+    for line in file_lines:
+        line_starts.append(line_starts[-1] + len(line))
+
+    msg_lines = [
+        f"Error: old_string appears {len(occurrences)} times in the file. "
+        f"It must be unique. Provide a larger string with more surrounding context "
+        f"to make it unique.\n",
+        f"Occurrences in `{filepath}`:\n",
+    ]
+
+    for idx, pos in enumerate(occurrences, 1):
+        # Find the 1-based line number of this occurrence
+        line_no = 1
+        for ls_idx in range(1, len(line_starts)):
+            if line_starts[ls_idx] > pos:
+                break
+            line_no = ls_idx
+
+        # Determine range of lines to show as context
+        start_line_idx = max(0, line_no - 1 - context_lines)
+        end_line_idx = min(len(file_lines), line_no - 1 + context_lines + 1)
+
+        msg_lines.append(f"--- Occurrence #{idx} at line {line_no} ---\n")
+        for li in range(start_line_idx, end_line_idx):
+            lnum = li + 1
+            prefix = ">" if lnum == line_no else " "
+            line_text = file_lines[li]
+            if not line_text.endswith("\n"):
+                line_text += "\n"
+            msg_lines.append(f"  {prefix} {lnum:4d}| {line_text}")
+        msg_lines.append("\n")
+
+    return "".join(msg_lines)
+
+
+def edit_file(filepath: str, old_string: str, new_string: str) -> str:
+    """Edit a file by finding and replacing an exact string.
+
+    Finds `old_string` in the file (must appear exactly once), replaces it
+    with `new_string`, shows a unified diff, asks for user confirmation,
+    then writes atomically.
+
+    Args:
+        filepath: Path to the file (absolute, or relative to current working directory).
+        old_string: The exact text to find and replace. Must appear exactly once
+                    in the file.
+        new_string: The replacement text.
+
+    Returns a summary of changes or an error message.
+    """
+    # Resolve the path
+    if not os.path.isabs(filepath):
+        resolved = os.path.join(os.getcwd(), filepath)
+    else:
+        resolved = filepath
+    resolved = os.path.normpath(resolved)
+
+    # Check if file exists
+    if not os.path.exists(resolved):
+        return f"Error: file not found: {filepath}"
+    if os.path.isdir(resolved):
+        return f"Error: path is a directory, not a file: {filepath}"
+
+    # Read current content
+    try:
+        with open(resolved, "r", encoding="utf-8", errors="replace") as f:
+            old_content = f.read()
+    except PermissionError:
+        return f"Error: permission denied reading: {filepath}"
+    except Exception as e:
+        return f"Error: could not read file '{filepath}': {e}"
+
+    # Validate old_string is not empty
+    if not old_string:
+        return "Error: old_string must not be empty."
+
+    # Find all occurrences of old_string
+    occurrences = []
+    start = 0
+    while True:
+        idx = old_content.find(old_string, start)
+        if idx == -1:
+            break
+        occurrences.append(idx)
+        start = idx + 1
+
+    if len(occurrences) == 0:
+        return "Error: old_string not found in file."
+    if len(occurrences) > 1:
+        return _show_occurrences(filepath, old_content, old_string, occurrences)
+
+    # Check for no-op
+    if old_string == new_string:
+        return "No changes to apply — old_string and new_string are identical."
+
+    # Compute new content (replace first/only occurrence)
+    new_content = old_content.replace(old_string, new_string, 1)
+
+    # Compute unified diff
+    old_lines = old_content.splitlines(keepends=True)
+    new_lines = new_content.splitlines(keepends=True)
+    diff = list(difflib.unified_diff(
+        old_lines,
+        new_lines,
+        fromfile=f"a/{filepath}",
+        tofile=f"b/{filepath}",
+    ))
+
+    # Count changes
+    added, removed = _count_diff_stats(diff)
+    diff_text = "".join(diff)
+
+    # Display the diff nicely
+    max_width = shutil.get_terminal_size().columns - 2
+    header = f" Proposed edit for `{filepath}` "
+    divider = '#' * max_width
+    left_pad = (max_width - len(header)) // 2
+    print()
+    print(divider)
+    print('#' + ' ' * (max_width - 2) + '#')
+    print(f"#{' ' * (left_pad - 1)}{header}{' ' * (max_width - len(header) - left_pad - 1)}#")
+    print('#' + ' ' * (max_width - 2) + '#')
+    print(divider)
+    print()
+    if diff_text:
+        for line in diff_text.splitlines(keepends=True):
+            print(line, end='')
+    else:
+        print("(diff is empty — unusual state)")
+    print()
+
+    # Show stats
+    summary_line = f"  {added} line(s) added, {removed} line(s) removed"
+    print(summary_line)
+    print(divider)
+
+    # Ask for confirmation
+    question = f" Apply this edit to `{filepath}`? y/n "
+    answer = input('\n' + question)
+    if answer.lower() not in ("y", "yes"):
+        print("Edit rejected by user.")
+        return "Edit rejected by user."
+
+    # Write atomically: write to a temp file, then rename
+    try:
+        # Ensure parent directory exists
+        parent = os.path.dirname(resolved)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+
+        fd, tmp_path = tempfile.mkstemp(dir=parent if parent else None, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
+                tmp_file.write(new_content)
+            # Rename atomic on the same filesystem
+            os.replace(tmp_path, resolved)
+        except Exception:
+            # Clean up temp file on failure
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+            raise
+    except PermissionError:
+        return f"Error: permission denied writing to: {filepath}"
+    except OSError as e:
+        return f"Error: could not write to '{filepath}': {e}"
+
+    return f"Successfully edited `{filepath}` — {added} line(s) added, {removed} line(s) removed."
+
+
 # ---------------------------------------------------------------------------
 #  Tool registry
 # ---------------------------------------------------------------------------
@@ -399,6 +597,44 @@ TOOL_REGISTRY: dict[str, dict] = {
         },
         "handler": web_search,
     },
+    "edit_file": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "edit_file",
+                "description": (
+                    "Edit a file by finding and replacing an exact string. "
+                    "The tool reads the current file, finds `old_string` (which must appear "
+                    "exactly once in the file), replaces it with `new_string`, computes a "
+                    "unified diff of the changes, displays it to the user, and asks for "
+                    "explicit confirmation before writing. If `old_string` appears multiple "
+                    "times, the tool will reject the edit and show the occurrences with "
+                    "context to help you disambiguate — provide a larger unique string "
+                    "with more surrounding context instead."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "filepath": {
+                            "type": "string",
+                            "description": "Path to the file (absolute, or relative to current working directory).",
+                        },
+                        "old_string": {
+                            "type": "string",
+                            "description": "The exact text to find and replace. Must appear exactly once in the file — if it appears multiple times, the tool will reject the edit and ask for more context.",
+                        },
+                        "new_string": {
+                            "type": "string",
+                            "description": "The replacement text.",
+                        },
+                    },
+                    "required": ["filepath", "old_string", "new_string"],
+                },
+            },
+        },
+        "handler": edit_file,
+    },
+
 }
 
 
