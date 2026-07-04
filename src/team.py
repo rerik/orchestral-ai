@@ -230,54 +230,63 @@ class Team:
         all_tools = host_tool_schemas + delegation_schemas
         delegation_names = set(self.member_agents.keys())
 
-        for turn in range(1, self.host_agent.max_turns + 1):
-            content, tool_calls = self.host_agent.model.chat(
-                messages, tools=all_tools if all_tools else None
-            )
+        try:
+            for turn in range(1, self.host_agent.max_turns + 1):
+                content, tool_calls = self.host_agent.model.chat(
+                    messages, tools=all_tools if all_tools else None
+                )
 
-            if content:
-                print(f"\n🤖 {content}")
+                if content:
+                    print(f"\n🤖 {content}")
 
-            if not tool_calls:
-                if not content:
-                    print("(no text output)")
-                else:
-                    messages.append({"role": "assistant", "content": content})
-                print()
-                return messages
+                if not tool_calls:
+                    if not content:
+                        print("(no text output)")
+                    else:
+                        messages.append({"role": "assistant", "content": content})
+                    print()
+                    return messages
 
-            assistant_msg: dict[str, Any] = {
-                "role": "assistant",
-                "content": content or "",
-            }
-            assistant_msg["tool_calls"] = tool_calls
-            messages.append(assistant_msg)
+                assistant_msg: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": content or "",
+                }
+                assistant_msg["tool_calls"] = tool_calls
+                messages.append(assistant_msg)
 
-            prefix = "\n" if content else ""
-            for tc in tool_calls:
-                func = tc["function"]["name"]
-                arguments = safe_json_loads(tc["function"]["arguments"])
-                tool_call_id = tc["id"]
+                prefix = "\n" if content else ""
+                for tc in tool_calls:
+                    func = tc["function"]["name"]
+                    arguments = safe_json_loads(tc["function"]["arguments"])
+                    tool_call_id = tc["id"]
 
-                # Check if this is a delegation call
-                if func.startswith("delegate_to_"):
-                    agent_name = func[len("delegate_to_"):]
-                    task = arguments.get("task", "")
-                    print(f"{prefix}🔧 Delegating to: {agent_name}")
-                    result = self._handle_delegation(agent_name, task)
-                else:
-                    print(f"{prefix}🔧 Tool: {func}({json.dumps(arguments, ensure_ascii=False)})")
-                    result = call_tool(func, arguments)
-                    print(f"   → {result[:500]}{'...' if len(result) > 500 else ''}")
+                    # Check if this is a delegation call
+                    if func.startswith("delegate_to_"):
+                        agent_name = func[len("delegate_to_"):]
+                        task = arguments.get("task", "")
+                        print(f"{prefix}🔧 Delegating to: {agent_name}")
+                        result = self._handle_delegation(agent_name, task)
+                    else:
+                        print(f"{prefix}🔧 Tool: {func}({json.dumps(arguments, ensure_ascii=False)})")
+                        result = call_tool(func, arguments)
+                        print(f"   → {result[:500]}{'...' if len(result) > 500 else ''}")
 
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "content": result,
-                })
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "content": result,
+                    })
 
-        print(f"\n⚠️ Max turns ({self.host_agent.max_turns}) reached. Stopping.")
-        return messages
+            print(f"\n⚠️ Max turns ({self.host_agent.max_turns}) reached. Stopping.")
+            return messages
+
+        except RuntimeError as e:
+            print(f"\n{e}")
+            print("Sorry, the request failed. Please try again.")
+            # Remove the user message that was just appended so it doesn't
+            # corrupt the message history for the next turn.
+            messages.pop()
+            return messages
 
     # ------------------------------------------------------------------
     #  Interactive chat loop
@@ -315,4 +324,8 @@ class Team:
                 print("👋 Goodbye!")
                 break
 
-            messages = self._host_turn(messages, user_input)
+            try:
+                messages = self._host_turn(messages, user_input)
+            except RuntimeError:
+                # Error already printed by _host_turn
+                continue

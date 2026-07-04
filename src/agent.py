@@ -140,43 +140,52 @@ class Agent:
         messages.append({"role": "user", "content": user_message})
         tools = self._get_tool_schemas()
 
-        for _ in range(1, self.max_turns + 1):
-            content, tool_calls = self.model.chat(messages, tools=tools)
+        try:
+            for _ in range(1, self.max_turns + 1):
+                content, tool_calls = self.model.chat(messages, tools=tools)
 
-            if content:
-                print(f"\n🤖 {content}")
+                if content:
+                    print(f"\n🤖 {content}")
 
-            if not tool_calls:
-                if not content:
-                    print("(no text output)")
-                else:
-                    # Append final assistant response so callers can capture it
-                    messages.append({"role": "assistant", "content": content})
-                print()
-                return messages
+                if not tool_calls:
+                    if not content:
+                        print("(no text output)")
+                    else:
+                        # Append final assistant response so callers can capture it
+                        messages.append({"role": "assistant", "content": content})
+                    print()
+                    return messages
 
-            assistant_msg: dict[str, Any] = {"role": "assistant", "content": content or ""}
-            assistant_msg["tool_calls"] = tool_calls
-            messages.append(assistant_msg)
+                assistant_msg: dict[str, Any] = {"role": "assistant", "content": content or ""}
+                assistant_msg["tool_calls"] = tool_calls
+                messages.append(assistant_msg)
 
-            prefix = "\n" if content else ""
-            for tc in tool_calls:
-                func = tc["function"]["name"]
-                arguments = safe_json_loads(tc["function"]["arguments"])
-                tool_call_id = tc["id"]
+                prefix = "\n" if content else ""
+                for tc in tool_calls:
+                    func = tc["function"]["name"]
+                    arguments = safe_json_loads(tc["function"]["arguments"])
+                    tool_call_id = tc["id"]
 
-                print(f"{prefix}🔧 Tool: {func}({json.dumps(arguments, ensure_ascii=False)})")
-                result = call_tool(func, arguments)
-                print(f"   → {result[:500]}{'...' if len(result) > 500 else ''}")
+                    print(f"{prefix}🔧 Tool: {func}({json.dumps(arguments, ensure_ascii=False)})")
+                    result = call_tool(func, arguments)
+                    print(f"   → {result[:500]}{'...' if len(result) > 500 else ''}")
 
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "content": result,
-                })
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "content": result,
+                    })
 
-        print(f"\n⚠️ Max turns ({self.max_turns}) reached. Stopping.")
-        return messages
+            print(f"\n⚠️ Max turns ({self.max_turns}) reached. Stopping.")
+            return messages
+
+        except RuntimeError as e:
+            print(f"\n{e}")
+            print("Sorry, the request failed. Please try again.")
+            # Remove the user message that was just appended so it doesn't
+            # corrupt the message history for the next turn.
+            messages.pop()
+            return messages
 
     def chat_loop(self) -> None:
         """Run an interactive chat loop (stdin/stdout)."""
@@ -201,4 +210,8 @@ class Agent:
                 print("👋 Goodbye!")
                 break
 
-            messages = self.agent_turn(messages, user_input)
+            try:
+                messages = self.agent_turn(messages, user_input)
+            except RuntimeError:
+                # Error already printed by agent_turn
+                continue

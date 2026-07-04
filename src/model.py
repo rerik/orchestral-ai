@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -130,15 +131,103 @@ class Model:
             payload["tools"] = tools
             payload["tool_choice"] = tool_choice
 
-        response = requests.post(
-            f"{self.base_url}/chat/completions",
-            json=payload,
-            headers=headers,
-        )
-        response.raise_for_status()
+        max_retries = 3
 
-        msg = response.json()["choices"][0]["message"]
-        content = (msg.get("content") or "").strip()
-        tool_calls = msg.get("tool_calls") or []
+        for attempt in range(max_retries + 1):
+            try:
+                response = requests.post(
+                    f"{self.base_url}/chat/completions",
+                    json=payload,
+                    headers=headers,
+                    timeout=120,
+                )
+            except requests.exceptions.Timeout:
+                if attempt < max_retries:
+                    wait = 2 ** attempt
+                    print(
+                        f"Request timed out. Retrying in {wait}s "
+                        f"(attempt {attempt + 1}/{max_retries + 1})..."
+                    )
+                    time.sleep(wait)
+                    continue
+                raise RuntimeError(
+                    f"Request timed out after {max_retries + 1} attempts. "
+                    f"The server at {self.base_url} did not respond in time."
+                )
 
-        return content, tool_calls
+            except requests.exceptions.ConnectionError as e:
+                if attempt < max_retries:
+                    wait = 2 ** attempt
+                    print(
+                        f"Connection error: {e}. Retrying in {wait}s "
+                        f"(attempt {attempt + 1}/{max_retries + 1})..."
+                    )
+                    time.sleep(wait)
+                    continue
+                raise RuntimeError(
+                    f"Connection failed after {max_retries + 1} attempts: {e}"
+                )
+
+            except requests.exceptions.RequestException as e:
+                # Other request-level errors (not retryable)
+                raise RuntimeError(f"Request failed: {e}")
+
+            # ------------------------------------------------------------------
+            #  Handle HTTP error responses
+            # ------------------------------------------------------------------
+            if response.status_code >= 400:
+                # Try to extract a meaningful error message from the API
+                try:
+                    error_body = response.json()
+                except (ValueError, requests.exceptions.JSONDecodeError):
+                    error_body = response.text
+
+                if isinstance(error_body, dict):
+                    api_error = error_body.get("error", {})
+                    if isinstance(api_error, dict):
+                        api_error = api_error.get("message", str(error_body))
+                    else:
+                        api_error = str(api_error) or str(error_body)
+                else:
+                    api_error = str(error_body).strip() or response.reason
+
+                # Retryable: 429 (rate limit) and 5xx (server errors)
+                is_retryable = (
+                    response.status_code == 429 or response.status_code >= 500
+                )
+
+                if is_retryable and attempt < max_retries:
+                    wait = 2 ** attempt
+                    print(
+                        f"API error ({response.status_code}): {api_error}. "
+                        f"Retrying in {wait}s "
+                        f"(attempt {attempt + 1}/{max_retries + 1})..."
+                    )
+                    time.sleep(wait)
+                    continue
+
+                # Non-retryable 4xx error → print and raise
+                if response.status_code < 500:
+                    print(f"API error ({response.status_code}): {api_error}")
+                    raise RuntimeError(
+                        f"API request failed ({response.status_code}): {api_error}"
+                    )
+
+                # Retryable error but out of retries
+                print(
+                    f"API error ({response.status_code}): {api_error}. "
+                    f"All {max_retries + 1} attempts exhausted."
+                )
+                raise RuntimeError(
+                    f"API request failed after {max_retries + 1} attempts "
+                    f"({response.status_code}): {api_error}"
+                )
+
+            # ------------------------------------------------------------------
+            #  Success — parse the response
+            # ------------------------------------------------------------------
+            msg = response.json()["choices"][0]["message"]
+            content = (msg.get("content") or "").strip()
+            tool_calls = msg.get("tool_calls") or []
+
+            return content, tool_calls

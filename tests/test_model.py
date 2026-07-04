@@ -191,6 +191,7 @@ class TestModelChat:
 
     def test_sends_correct_payload(self, model):
         fake_response = MagicMock()
+        fake_response.status_code = 200
         fake_response.json.return_value = {
             "choices": [{"message": {"content": "Hello!", "tool_calls": None}}]
         }
@@ -213,6 +214,7 @@ class TestModelChat:
 
     def test_includes_tools_when_provided(self, model):
         fake_response = MagicMock()
+        fake_response.status_code = 200
         fake_response.json.return_value = {
             "choices": [{"message": {"content": None, "tool_calls": None}}]
         }
@@ -229,6 +231,7 @@ class TestModelChat:
     def test_custom_tool_choice(self, model):
         """tool_choice is only sent when tools list is non-empty (truthy)."""
         fake_response = MagicMock()
+        fake_response.status_code = 200
         fake_response.json.return_value = {
             "choices": [{"message": {"content": None, "tool_calls": None}}]
         }
@@ -247,6 +250,7 @@ class TestModelChat:
     def test_returns_tool_calls(self, model):
         tool_calls = [{"id": "tc1", "function": {"name": "bash", "arguments": '{"cmd":"ls"}'}}]
         fake_response = MagicMock()
+        fake_response.status_code = 200
         fake_response.json.return_value = {
             "choices": [{"message": {"content": "Let me run that...", "tool_calls": tool_calls}}]
         }
@@ -260,6 +264,7 @@ class TestModelChat:
 
     def test_empty_content_becomes_empty_string(self, model):
         fake_response = MagicMock()
+        fake_response.status_code = 200
         fake_response.json.return_value = {
             "choices": [{"message": {"content": None, "tool_calls": None}}]
         }
@@ -281,16 +286,17 @@ class TestModelChat:
             model.chat([{"role": "user", "content": "Hi"}])
 
     def test_http_error_propagates(self, model):
-        import requests as req_lib
         fake_response = MagicMock()
-        fake_response.raise_for_status.side_effect = req_lib.HTTPError("Unauthorized")
+        fake_response.status_code = 401
+        fake_response.json.return_value = {"error": {"message": "Unauthorized"}}
 
         with patch("requests.post", return_value=fake_response):
-            with pytest.raises(req_lib.HTTPError, match="Unauthorized"):
+            with pytest.raises(RuntimeError, match="Unauthorized"):
                 model.chat([{"role": "user", "content": "Hi"}])
 
     def test_authorization_header_set(self, model):
         fake_response = MagicMock()
+        fake_response.status_code = 200
         fake_response.json.return_value = {
             "choices": [{"message": {"content": "ok", "tool_calls": None}}]
         }
@@ -305,6 +311,7 @@ class TestModelChat:
 
     def test_url_endpoint(self, model):
         fake_response = MagicMock()
+        fake_response.status_code = 200
         fake_response.json.return_value = {
             "choices": [{"message": {"content": "ok", "tool_calls": None}}]
         }
