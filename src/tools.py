@@ -154,6 +154,7 @@ ALLOWED_CMD = [
     "which", "type", "command", "hash",
     "basename", "dirname", "realpath", "readlink",
     "git status", "git log", "git diff", "git show",
+    " python3 -m pytest", "python3 -m unittest", "python3 -m doctest",
 ]
 
 
