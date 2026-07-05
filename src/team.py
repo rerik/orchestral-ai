@@ -7,7 +7,6 @@ and exposes member agents as delegation tools to the host.
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 from dataclasses import dataclass, field
@@ -273,7 +272,7 @@ class Team:
                         print(f"{prefix}🔧 Delegating to: {agent_name}")
                         result = self._handle_delegation(agent_name, task)
                     else:
-                        print(f"{prefix}🔧 Tool: {func}({json.dumps(arguments, ensure_ascii=False)})")
+                        print(f"{prefix}{Agent._format_tool_call(func, arguments)}")
                         result = call_tool(func, arguments)
                         print(f"   → {result[:500]}{'...' if len(result) > 500 else ''}")
 

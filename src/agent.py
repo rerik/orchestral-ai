@@ -131,6 +131,7 @@ class Agent:
     @staticmethod
     def _format_tool_call(func: str, arguments: dict) -> str:
         """Return a human-readable tool call string based on the tool type."""
+
         if func == "read_file":
             return f"🔧 read_file: {arguments.get('filepath', arguments)}"
         elif func == "bash":
