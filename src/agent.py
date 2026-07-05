@@ -179,9 +179,17 @@ class Agent:
                     arguments = safe_json_loads(tc["function"]["arguments"])
                     tool_call_id = tc["id"]
 
-                    print(f"{prefix}{Agent._format_tool_call(func, arguments)}")
+                    # bash handles its own display via the permission prompt
+                    if func != "bash":
+                        print(f"{prefix}{Agent._format_tool_call(func, arguments)}")
                     result = call_tool(func, arguments)
-                    print(f"   → {result[:500]}{'...' if len(result) > 500 else ''}")
+                    if func != "bash":
+                        print(f"   → {result[:500]}{'...' if len(result) > 500 else ''}")
+                    elif result.startswith("Exit code:"):
+                        # bash result: show the full output (already had its own display)
+                        print(f"   → {result[:500]}{'...' if len(result) > 500 else ''}")
+                    elif not result.startswith("Error:"):
+                        print(f"   → {result[:500]}{'...' if len(result) > 500 else ''}")
 
                     messages.append({
                         "role": "tool",
