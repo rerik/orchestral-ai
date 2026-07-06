@@ -18,7 +18,7 @@ from typing import Any
 import yaml
 
 from model import Model
-from tools import get_tool_schemas, call_tool, safe_json_loads
+from tools import get_tool_schemas, call_tool, safe_json_loads, configure_risk_model
 
 
 @dataclass
@@ -117,6 +117,9 @@ class Agent:
 
         # --- tools ---
         tool_names = data.get("tools", [])
+
+        # Configure AI risk assessment for bash commands using this agent's model
+        configure_risk_model(model)
 
         return cls(
             name=data["name"],

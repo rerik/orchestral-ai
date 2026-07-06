@@ -3,6 +3,12 @@ Tool definitions: each tool has a name, an LLM function schema,
 and a handler function.
 """
 
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from model import Model
+
 import json
 import os
 import re
@@ -168,12 +174,305 @@ def _is_allowed(cmd: str) -> bool:
     return False
 
 
+def _summarize_command(cmd: str) -> str:
+    """Analyze a bash command string and return a brief human-readable summary."""
+    first_word = cmd.strip().split()[0] if cmd.strip().split() else ""
+
+    summary_map = {
+        "ls": "Lists directory contents",
+        "cd": "Changes the current directory",
+        "pwd": "Prints the current working directory",
+        "cat": "Displays file contents",
+        "head": "Shows the first lines of a file",
+        "tail": "Shows the last lines of a file",
+        "wc": "Counts words/lines/characters in a file",
+        "stat": "Shows file metadata",
+        "file": "Determines file type",
+        "du": "Shows disk usage of files/directories",
+        "df": "Shows filesystem disk space",
+        "grep": "Searches for patterns in text",
+        "sort": "Sorts lines of text",
+        "uniq": "Removes or reports duplicate lines",
+        "diff": "Compares files line by line",
+        "comm": "Compares two sorted files",
+        "cut": "Extracts columns from text",
+        "tr": "Translates or deletes characters",
+        "fmt": "Formats text paragraphs",
+        "pr": "Formats text for printing",
+        "fold": "Wraps lines to a given width",
+        "echo": "Prints text to output",
+        "printf": "Prints formatted text",
+        "which": "Locates an executable in PATH",
+        "type": "Shows how a command would be interpreted",
+        "command": "Runs a command bypassing shell functions",
+        "hash": "Manages the shell's command hash table",
+        "basename": "Extracts the filename from a path",
+        "dirname": "Extracts the directory from a path",
+        "realpath": "Resolves a path to its canonical form",
+        "readlink": "Reads the target of a symbolic link",
+        "find": "Searches for files in a directory hierarchy",
+        "mkdir": "Creates a new directory",
+        "touch": "Creates an empty file or updates timestamps",
+        "cp": "Copies files or directories",
+        "mv": "Moves or renames files",
+        "rmdir": "Removes empty directories",
+        "curl": "Transfers data from/to a server (HTTP client)",
+        "wget": "Downloads files from the web",
+        "pip": "Python package manager",
+        "pip3": "Python package manager",
+        "npm": "Node.js package manager",
+        "apt": "Debian/Ubuntu package manager",
+        "apt-get": "Debian/Ubuntu package manager",
+        "git": "Git version control",
+        "python": "Runs a Python script or command",
+        "python3": "Runs a Python script or command",
+        "node": "Runs a Node.js script",
+        "sudo": "Executes a command with superuser privileges",
+        "chmod": "Changes file permissions",
+        "chown": "Changes file ownership",
+        "kill": "Sends a signal to processes",
+        "pkill": "Sends a signal to processes",
+        "killall": "Sends a signal to processes",
+        "shutdown": "System power management",
+        "reboot": "System power management",
+        "dd": "Low-level disk copying utility (use with caution)",
+        "ssh": "Secure shell remote connection",
+        "scp": "Secure file copy over SSH",
+        "rsync": "Remote/local file synchronization",
+        "tar": "Archives or extracts files",
+        "zip": "Compresses or extracts ZIP archives",
+        "unzip": "Compresses or extracts ZIP archives",
+        "docker": "Docker container management",
+        "systemctl": "Systemd service manager",
+        "make": "Build automation",
+        "sed": "Stream editor for text transformation",
+        "awk": "Text processing language",
+        "tee": "Writes to both stdout and files",
+    }
+
+    # Special handling for rm
+    if first_word == "rm":
+        if "-rf" in cmd or "-r" in cmd:
+            summary = "Removes files or directories (recursive, forced)"
+        else:
+            summary = "Removes files or directories"
+    elif first_word in summary_map:
+        summary = summary_map[first_word]
+    else:
+        summary = f"Executes: {first_word}"
+
+    # Append modifiers
+    if "|" in cmd:
+        summary += " (uses pipes to chain commands)"
+    if ">" in cmd or ">>" in cmd:
+        summary += " (with output redirection)"
+    if "&&" in cmd:
+        summary += " (conditional chaining with &&)"
+    if ";" in cmd:
+        summary += " (sequential commands)"
+
+    return summary
+
+
+def _assess_risk_rule_based(cmd: str) -> tuple[str, str]:
+    """Assess the risk level of a bash command. Returns (risk_level, reason)."""
+    # Check piped parts — assess highest risk across all parts
+    parts = cmd.split("|")
+    if len(parts) > 1:
+        highest = "low"
+        highest_reason = "Read-only or diagnostic operation"
+        for part in parts:
+            risk, reason = _assess_risk_rule_based(part.strip())
+            risk_order = {"low": 0, "medium": 1, "high": 2}
+            if risk_order[risk] > risk_order[highest]:
+                highest = risk
+                highest_reason = reason
+        return highest, highest_reason
+
+    first_word = cmd.strip().split()[0] if cmd.strip().split() else ""
+
+    # HIGH risk checks
+    if "sudo" in cmd or "su" in cmd:
+        return "high", "Requires superuser privileges"
+
+    if first_word == "rm" or " rm " in f" {cmd} ":
+        reason = "Destructive: removes files/directories"
+        if "-rf" in cmd:
+            reason += " (recursive force removal)"
+        return "high", reason
+
+    if first_word == "rmdir":
+        return "high", "Removes directories"
+
+    if first_word == "chmod" or " chmod " in f" {cmd} ":
+        return "high", "Changes file permissions"
+
+    if first_word == "chown" or " chown " in f" {cmd} ":
+        return "high", "Changes file ownership"
+
+    if first_word in ("kill", "pkill", "killall"):
+        return "high", "Sends termination signals to processes"
+
+    if first_word in ("shutdown", "reboot"):
+        return "high", "Affects system power state"
+
+    if first_word == "dd":
+        return "high", "Low-level disk operations — can destroy data"
+
+    if first_word.startswith("mkfs"):
+        return "high", "Creates filesystems — destroys existing data"
+
+    if "| bash" in cmd or "| sh" in cmd or "| zsh" in cmd:
+        return "high", "Pipes content directly to a shell interpreter — potential code execution risk"
+
+    if first_word == "systemctl":
+        subcmds = ("stop", "restart", "disable", "mask")
+        words = cmd.strip().split()
+        if len(words) > 1 and words[1] in subcmds:
+            return "high", "Modifies system services"
+
+    # MEDIUM risk checks
+    if first_word in ("curl", "wget"):
+        return "medium", "Network request to external server"
+
+    if first_word in ("pip", "pip3", "npm", "apt", "apt-get"):
+        return "medium", "Package installation/modification"
+
+    if first_word == "mkdir":
+        return "medium", "Creates directories"
+
+    if first_word == "touch":
+        return "medium", "Creates or modifies files"
+
+    if first_word in ("cp", "mv"):
+        return "medium", "Copies or moves files"
+
+    if first_word in ("tar", "zip", "unzip"):
+        return "medium", "Archive extraction/creation"
+
+    if first_word == "git":
+        safe_commands = ("git status", "git log", "git diff", "git show")
+        if not any(cmd.strip().startswith(sc) for sc in safe_commands):
+            return "medium", "Git repository modification"
+        return "low", "Read-only Git operation"
+
+    if first_word == "docker":
+        return "medium", "Docker container operations"
+
+    if first_word in ("ssh", "scp"):
+        return "medium", "Remote system connection"
+
+    if first_word == "make":
+        return "medium", "Runs build automation (Makefile)"
+
+    if first_word in ("python3", "python"):
+        return "medium", "Executes Python code"
+
+    if first_word == "node":
+        return "medium", "Executes JavaScript code"
+
+    if first_word == "sed" and "-i" in cmd:
+        return "medium", "In-place file modification"
+
+    if ">" in cmd or ">>" in cmd:
+        return "medium", "Output redirection — writes to files"
+
+    # LOW risk (default)
+    return "low", "Read-only or diagnostic operation"
+
+
+# Module-level AI risk model (set via configure_risk_model)
+_risk_model = None  # type: Model | None
+
+
+def configure_risk_model(model) -> None:
+    """Configure an AI model for bash command risk assessment.
+    
+    Args:
+        model: A Model instance. Pass None to revert to rule-based assessment.
+    """
+    global _risk_model
+    _risk_model = model
+
+
+def _assess_risk_ai(cmd: str) -> tuple[str, str]:
+    """Use an AI model to assess the risk of a bash command.
+    
+    Returns (risk_level, reason) where risk_level is 'low', 'medium', or 'high'.
+    Falls back to rule-based assessment if the model call fails.
+    """
+    global _risk_model
+    
+    if _risk_model is None:
+        return _assess_risk_rule_based(cmd)
+    
+    prompt = f"""Analyze this bash command and assess its risk level. Return ONLY a JSON object with exactly two keys:
+- "risk": one of "low", "medium", or "high"
+- "reason": a brief (one sentence) explanation of why
+
+Risk guidelines:
+- low: read-only or diagnostic commands (ls, cat, grep, find, stat, etc.)
+- medium: commands that create/modify files or make network requests but are reversible (touch, mkdir, cp, mv, curl, pip install, git commit, etc.)
+- high: destructive commands, privilege escalation, or system modification (rm, sudo, chmod, chown, kill, dd, shutdown, etc.)
+
+Command: {cmd}
+
+Respond with ONLY the JSON object, no other text:"""
+
+    try:
+        content, _ = _risk_model.chat(
+            messages=[{"role": "user", "content": prompt}],
+            tools=None,
+        )
+        
+        # Parse the JSON response
+        import json
+        result = json.loads(content.strip())
+        
+        risk = result.get("risk", "medium").lower()
+        reason = result.get("reason", "AI could not determine specific risk")
+        
+        # Validate risk level
+        if risk not in ("low", "medium", "high"):
+            risk = "medium"
+        
+        return risk, reason
+        
+    except Exception:
+        # Fall back to rule-based on any error
+        return _assess_risk_rule_based(cmd)
+
+
 def _check_bash_permission(cmd: str) -> bool:
+    """Check if a bash command is allowed to run. 
+    Auto-allows commands composed only of commands in the ALLOWED_CMD list.
+    For other commands, displays a risk assessment and summary, then asks user.
+    """
     delimiters = r'&&|\|\||>>|<<|\||;|&|>|<'
     cmd_parts = [part.strip() for part in re.split(delimiters, cmd) if part.strip()]
+    
+    # Auto-allow if all parts are in the allowed list
     if all(map(_is_allowed, cmd_parts)):
         return True
-    explicit_permission: str = input('🟡 Allow? y/n"\n\n')
+    
+    # Generate summary and risk assessment
+    summary = _summarize_command(cmd)
+    risk_level, risk_reason = _assess_risk_ai(cmd)
+    
+    emoji_map = {"low": "🟢", "medium": "🟡", "high": "🔴"}
+    emoji = emoji_map[risk_level]
+    
+    # Display the prompt with summary and risk
+    max_width = shutil.get_terminal_size().columns
+    print()
+    print("-" * max_width)
+    print(f"{emoji} RISK LEVEL: {risk_level.upper()}")
+    print(f"   Command : {cmd}")
+    print(f"   Summary : {summary}")
+    print(f"   Risk    : {risk_reason}")
+    print("-" * max_width)
+    
+    explicit_permission: str = input(f'{emoji} Allow execution? y/n: ')
     return explicit_permission.lower() in ("y", "yes")
 
 

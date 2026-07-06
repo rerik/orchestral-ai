@@ -16,7 +16,7 @@ import yaml
 
 from model import Model
 from agent import Agent
-from tools import get_tool_schemas, call_tool, safe_json_loads
+from tools import get_tool_schemas, call_tool, safe_json_loads, configure_risk_model
 
 
 @dataclass
@@ -83,6 +83,16 @@ class Team:
                         model_registry[model.name] = model
                     except Exception:
                         pass  # skip broken model configs
+
+        # --- Configure AI risk assessment for bash commands ---
+        # Use the cheapest available model; fall back to host model; 
+        # if no models at all, stays rule-based.
+        risk_model: Model | None = None
+        if model_registry:
+            # Prefer cheapest model (lowest cost_coefficient)
+            cheapest = min(model_registry.values(), key=lambda m: m.cost_coefficient)
+            risk_model = cheapest
+        configure_risk_model(risk_model)
 
         # --- Load host agent ---
         host_agent_path = _resolve(data["host"]["agent"])
