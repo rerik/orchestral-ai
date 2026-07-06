@@ -174,8 +174,8 @@ def _is_allowed(cmd: str) -> bool:
     return False
 
 
-def _summarize_command(cmd: str) -> str:
-    """Analyze a bash command string and return a brief human-readable summary."""
+def _summarize_command_rule_based(cmd: str) -> str:
+    """Analyze a bash command string and return a brief human-readable summary (rule-based fallback)."""
     first_word = cmd.strip().split()[0] if cmd.strip().split() else ""
 
     summary_map = {
@@ -441,6 +441,63 @@ Respond with ONLY the JSON object, no other text:"""
     except Exception:
         # Fall back to rule-based on any error
         return _assess_risk_rule_based(cmd)
+
+
+# Module-level AI summary model (set via configure_summary_model)
+_summary_model = None  # type: Model | None
+
+
+def configure_summary_model(model) -> None:
+    """Configure an AI model for bash command summarization.
+
+    Args:
+        model: A Model instance. Pass None to revert to rule-based summarization.
+    """
+    global _summary_model
+    _summary_model = model
+
+
+def _summarize_command_ai(cmd: str) -> str:
+    """Use an AI model to summarize a bash command.
+
+    Returns a brief human-readable summary string.
+    Falls back to rule-based summarization if the model call fails.
+    """
+    global _summary_model
+
+    if _summary_model is None:
+        return _summarize_command_rule_based(cmd)
+
+    prompt = f"""Analyze this bash command and provide a brief one-sentence summary of what it does.
+Focus on the primary effect: what is the intent and what will happen when it runs?
+Include notable flags or modifiers. Be concise — one sentence only.
+
+Command: {cmd}
+
+Respond with ONLY the summary sentence, no other text:"""
+
+    try:
+        content, _ = _summary_model.chat(
+            messages=[{"role": "user", "content": prompt}],
+            tools=None,
+        )
+
+        summary = content.strip()
+        if summary:
+            return summary
+        return _summarize_command_rule_based(cmd)
+
+    except Exception:
+        # Fall back to rule-based on any error
+        return _summarize_command_rule_based(cmd)
+
+
+def _summarize_command(cmd: str) -> str:
+    """Analyze a bash command string and return a brief human-readable summary.
+
+    Uses an AI model if configured; falls back to rule-based summarization otherwise.
+    """
+    return _summarize_command_ai(cmd)
 
 
 def _check_bash_permission(cmd: str) -> bool:
