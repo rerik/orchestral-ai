@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 from dataclasses import dataclass, field
+import textwrap
 from typing import Any
 
 import yaml
@@ -133,11 +135,22 @@ class Agent:
         """Return a human-readable tool call string based on the tool type."""
 
         if func == "read_file":
-            return f"🔧 read_file: {arguments.get('filepath', arguments)}"
+            return f"📖 read_file: {arguments.get('filepath', arguments)}"
         elif func == "bash":
-            return f"🔧 bash: {arguments.get('command', arguments)}"
+            max_width = shutil.get_terminal_size().columns
+            line_1 = '#' * max_width
+            line_2 = '#' + ' ' * (max_width-2) + '#'
+            command = f">_ bash: {arguments.get('command', arguments)}"
+            lines = textwrap.wrap(command, width=(max_width-6), break_long_words=False, break_on_hyphens=False)
+            output = f"\n{line_1}\n{line_2}\n"
+            for line in lines:
+                output += f"#  {line:<{max_width-6}}  #\n"
+            output += f"{line_2}\n{line_1}\n"
+            return output
+        elif func == "edit_file":
+            return ""
         elif func == "web_search":
-            return f"🔧 web_search: \"{arguments.get('query', arguments)}\""
+            return f"🌐 web_search: \"{arguments.get('query', arguments)}\""
         else:
             return f"🔧 Tool: {func}({json.dumps(arguments, ensure_ascii=False)})"
 

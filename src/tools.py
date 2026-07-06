@@ -173,10 +173,7 @@ def _check_bash_permission(cmd: str) -> bool:
     cmd_parts = [part.strip() for part in re.split(delimiters, cmd) if part.strip()]
     if all(map(_is_allowed, cmd_parts)):
         return True
-    max_width = shutil.get_terminal_size().columns - 2
-    wrap = '# ' + '-' * max_width
-    prompt = f"🔧 bash: {cmd}\nAllow? y/n"
-    explicit_permission: str = input('\n' + wrap + '\n' + prompt + '\n' + wrap + '\n')
+    explicit_permission: str = input('🟡 Allow? y/n"\n\n')
     return explicit_permission.lower() in ("y", "yes")
 
 
