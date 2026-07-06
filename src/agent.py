@@ -10,6 +10,7 @@ import json
 import os
 import shutil
 import sys
+import unicodedata
 from dataclasses import dataclass, field
 import textwrap
 from typing import Any
@@ -131,28 +132,60 @@ class Agent:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _display_width(s: str) -> int:
+        """Compute the display width of a string in terminal columns.
+
+        Uses Unicode East Asian Width to correctly handle emojis, CJK
+        characters, and other symbols that occupy two terminal columns.
+        """
+        w = 0
+        for ch in s:
+            if unicodedata.east_asian_width(ch) in ("W", "F"):
+                w += 2
+            else:
+                w += 1
+        return w
+
+    @staticmethod
+    def _wrap_in_box(label: str, content: str, max_width: int | None = None) -> str:
+        """Wrap content in a decorative '#' box with a label."""
+        if max_width is None:
+            max_width = shutil.get_terminal_size().columns
+        header = f"{label}: {content}"
+        # ── wrap conservatively: textwrap.wrap uses len(), which undercounts
+        #    emoji width, so shave off an extra 2 chars of slack
+        wrap_width = max_width - 8
+        wrapped = textwrap.wrap(
+            header, width=wrap_width, break_long_words=False, break_on_hyphens=False
+        )
+        top = "#" * max_width
+        blank = "#" + " " * (max_width - 2) + "#"
+        lines = [top, blank]
+        for line in wrapped:
+            display_w = Agent._display_width(line)
+            padding = max_width - 6 - display_w
+            if padding < 0:
+                padding = 0
+            lines.append(f"#  {line}{' ' * padding}  #")
+        lines += [blank, top]
+        return "\n" + "\n".join(lines) + "\n"
+
+    @staticmethod
     def _format_tool_call(func: str, arguments: dict) -> str:
         """Return a human-readable tool call string based on the tool type."""
 
         if func == "read_file":
-            return f"📖 read_file: {arguments.get('filepath', arguments)}"
+            return Agent._wrap_in_box("📖 read_file", str(arguments.get("filepath", arguments)))
         elif func == "bash":
-            max_width = shutil.get_terminal_size().columns
-            line_1 = '#' * max_width
-            line_2 = '#' + ' ' * (max_width-2) + '#'
-            command = f">_ bash: {arguments.get('command', arguments)}"
-            lines = textwrap.wrap(command, width=(max_width-6), break_long_words=False, break_on_hyphens=False)
-            output = f"\n{line_1}\n{line_2}\n"
-            for line in lines:
-                output += f"#  {line:<{max_width-6}}  #\n"
-            output += f"{line_2}\n{line_1}\n"
-            return output
+            return Agent._wrap_in_box(">_ bash", str(arguments.get("command", arguments)))
         elif func == "edit_file":
             return ""
         elif func == "web_search":
-            return f"🌐 web_search: \"{arguments.get('query', arguments)}\""
+            return Agent._wrap_in_box("🌐 web_search", f"\"{arguments.get('query', arguments)}\"")
         else:
-            return f"🔧 Tool: {func}({json.dumps(arguments, ensure_ascii=False)})"
+            return Agent._wrap_in_box(
+                "🔧 Tool", f"{func}({json.dumps(arguments, ensure_ascii=False)})"
+            )
 
     def _get_tool_schemas(self) -> list[dict]:
         """Return the LLM tool schemas for this agent's tool set."""
