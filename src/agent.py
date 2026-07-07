@@ -19,6 +19,7 @@ import yaml
 
 from model import Model
 from tools import get_tool_schemas, call_tool, safe_json_loads, configure_risk_model
+from input_handler import setup_readline, get_input
 
 
 @dataclass
@@ -259,6 +260,8 @@ class Agent:
 
     def chat_loop(self) -> None:
         """Run an interactive chat loop (stdin/stdout)."""
+        setup_readline()
+
         print(f"🤖 {self.name} — Chat mode")
         print("Type your task below. Type 'exit' or 'quit' to end the session.")
         print()
@@ -268,11 +271,7 @@ class Agent:
             messages.append({"role": "system", "content": self.system_prompt})
 
         while True:
-            try:
-                user_input = input(">>> ").strip()
-            except (EOFError, KeyboardInterrupt):
-                print("\n\n👋 Goodbye!")
-                sys.exit(0)
+            user_input = get_input()
 
             if not user_input:
                 continue

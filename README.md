@@ -16,7 +16,8 @@ smart_agent/
 │   │   ├── host_agent.yaml            # Host agent config (team orchestrator)
 │   │   └── research_agent.yaml        # Research agent config (analysis & explanation)
 │   ├── models/
-│   │   └── deepseek.yaml          # Model config (API endpoint, params)
+│   │   ├── deepseek.yaml          # Model config (API endpoint, params)
+│   │   └── deepseek-v4-flash.yaml # Cheaper, faster model config
 │   └── team.yaml                  # Team config (host + member agents)
 ├── prompts/
 │   ├── coding_system_prompt.txt   # System prompt for coding agents
@@ -29,7 +30,8 @@ smart_agent/
 │   ├── model.py                   # Model class — LLM configuration & chat completion
 │   ├── agent.py                   # Agent class — conversation loop & tool orchestration
 │   ├── team.py                    # Team class — multi-agent orchestration
-│   └── tools.py                   # Tool registry — bash & read_file implementations
+│   ├── tools.py                   # Tool registry — bash & read_file implementations
+│   └── input_handler.py           # Terminal input helpers — readline & history
 ├── tests/
 │   ├── __init__.py
 │   ├── conftest.py                # Shared fixtures (temp_dir, temp_file)
@@ -39,6 +41,7 @@ smart_agent/
 │   ├── test_team.py               # Tests for Team (config loading, delegation, chat loop)
 │   └── test_tools.py              # Tests for tools (allowlist, sensitive detection, bash, read_file)
 ├── requirements.txt
+├── LICENSE
 └── README.md
 ```
 
@@ -51,6 +54,7 @@ smart_agent/
 | `src/agent.py` | `Agent` dataclass — holds the system prompt, equipped tools, and max-turn limit. Runs the agent loop: sends user messages to the model, invokes tool calls, and returns results. Can be instantiated from a YAML file. |
 | `src/team.py` | Team orchestration — loads team config, creates host + member agents, injects delegation tools into the host, and runs the multi-agent chat loop. The host analyzes tasks, delegates subtasks to members, and synthesizes results. |
 | `src/tools.py` | Tool registry. Defines four tools — **`bash`** (safe shell execution with an allowlist and user confirmation), **`read_file`** (file reading with sensitive-file blocking), **`web_search`** (DuckDuckGo web search), and **`edit_file`** (exact-string find-and-replace with diff preview and confirmation). Each tool provides an LLM function schema and a handler. |
+| `src/input_handler.py` | Terminal input helpers for interactive mode. Provides **`setup_readline`** for persistent command history across sessions and **`get_input`** for safe input with EOF/KeyboardInterrupt handling. |
 
 ### Test Suite
 

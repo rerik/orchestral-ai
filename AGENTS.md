@@ -14,7 +14,8 @@ smart_agent/
 │   │   ├── host_agent.yaml            # Host agent config (team orchestrator)
 │   │   └── research_agent.yaml        # Research agent config (analysis & explanation)
 │   ├── models/
-│   │   └── deepseek.yaml          # Model config (API endpoint, params)
+│   │   ├── deepseek.yaml          # Model config (API endpoint, params)
+│   │   └── deepseek-v4-flash.yaml # Cheaper, faster model config
 │   └── team.yaml                  # Team config (host + member agents)
 ├── prompts/
 │   ├── coding_system_prompt.txt   # System prompt for coding agents
@@ -27,7 +28,8 @@ smart_agent/
 │   ├── model.py                   # Model class — LLM config & chat completion
 │   ├── agent.py                   # Agent class — conversation loop & tool orchestration
 │   ├── team.py                    # Team class — multi-agent orchestration
-│   └── tools.py                   # Tool registry — bash & read_file implementations
+│   ├── tools.py                   # Tool registry — bash & read_file implementations
+│   └── input_handler.py           # Terminal input helpers — readline & history
 ├── tests/
 │   ├── __init__.py                # Package marker
 │   ├── conftest.py                # Shared fixtures (temp_dir, temp_file)
@@ -37,6 +39,7 @@ smart_agent/
 │   ├── test_team.py               # Tests for Team (config loading, delegation, chat loop)
 │   └── test_tools.py              # Tests for tools (allowlist, sensitive detection, bash, read_file)
 ├── requirements.txt
+├── LICENSE
 ├── README.md
 └── AGENTS.md
 ```
@@ -78,7 +81,17 @@ Defines the tool registry (`TOOL_REGISTRY`) with four tools:
 
 Each tool entry provides both an LLM function schema and a Python handler function.
 
-### 6. Tests (`tests/`)
+Additional utilities in `tools.py`:
+- **`safe_json_loads(raw)`** — Parses potentially malformed JSON from LLM outputs. Attempts multiple recovery strategies (unterminated strings, unclosed braces, trailing commas).
+- **`configure_risk_model(model)`** — Sets up an optional AI model for intelligent bash command risk assessment. Falls back to rule-based assessment when `None` or on API errors.
+- **`configure_summary_model(model)`** — Sets up an optional AI model for bash command summarization. Falls back to rule-based summarization when `None` or on API errors.
+
+### 6. Input Handler (`src/input_handler.py`)
+Provides enhanced terminal input functionality used by both the Agent and Team interactive loops:
+- **`setup_readline(history_file)`** — Configures GNU readline with persistent history (~/.smart_agent_history), saving up to 1000 entries across sessions. Gracefully degrades if readline is unavailable.
+- **`get_input(prompt)`** — Thin wrapper around `input()` that strips input and handles EOF/KeyboardInterrupt by cleanly exiting.
+
+### 7. Tests (`tests/`)
 Comprehensive test suite covering all modules across 5 files:
 
 | Test file | Coverage |
@@ -94,13 +107,13 @@ Run tests with:
 pytest tests/ -v
 ```
 
-### 7. Configuration (`configs/`)
+### 8. Configuration (`configs/`)
 YAML files that drive the entire framework without code changes:
 - **Model configs** (`configs/models/`) — Define LLM providers (base URL, model ID, API key env var, temperature, cost coefficient, etc.).
 - **Agent configs** (`configs/agents/`) — Tie together a model, system prompt, and tool set.
 - **Team config** (`configs/team.yaml`) — Defines a team with a host agent and member agents, each with a name, agent path, and description.
 
-### 8. Prompts (`prompts/`)
+### 9. Prompts (`prompts/`)
 Contains system prompt templates that define agent behavior, workflow, and constraints:
 - `system_prompt.txt` — General-purpose single-agent prompt.
 - `coding_system_prompt.txt` — Coding agent prompt covering tool usage, workflow, and file writing best practices.
