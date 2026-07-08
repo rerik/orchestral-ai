@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from model import Model
 from agent import Agent
 from team import Team
+from chat_manager import ChatManager
 
 # ---------------------------------------------------------------------------
 #  Default config paths (relative to the project root)
@@ -38,7 +39,7 @@ def resolve_path(path: str) -> str:
     return os.path.normpath(os.path.join(root, path))
 
 
-def run_single_agent(model_path: str, agent_path: str) -> None:
+def run_single_agent(model_path: str, agent_path: str, chat_manager: ChatManager | None = None) -> None:
     """Run a single agent in interactive chat mode."""
     # --- Load model ---
     if not os.path.isfile(model_path):
@@ -59,6 +60,7 @@ def run_single_agent(model_path: str, agent_path: str) -> None:
 
     print(f"🤖 Loading agent from: {agent_path}")
     agent = Agent.from_yaml(agent_path, model_registry=model_registry)
+    agent.chat_manager = chat_manager
     print(f"   ✓ Agent '{agent.name}' loaded with tools: {agent.tool_names}")
     print()
 
@@ -66,7 +68,7 @@ def run_single_agent(model_path: str, agent_path: str) -> None:
     agent.chat_loop()
 
 
-def run_team(team_path: str) -> None:
+def run_team(team_path: str, chat_manager: ChatManager | None = None) -> None:
     """Run a multi-agent team in interactive chat mode."""
     if not os.path.isfile(team_path):
         print(f"ERROR: team config not found: {team_path}")
@@ -74,6 +76,7 @@ def run_team(team_path: str) -> None:
 
     print(f"👥 Loading team from: {team_path}")
     team = Team.from_yaml(team_path)
+    team.chat_manager = chat_manager
     print(f"   ✓ Team '{team.name}' loaded")
     print(f"   ✓ Host: '{team.host_agent.name}' "
           f"({team.host_agent.model.model_id})")
@@ -109,7 +112,32 @@ def main() -> None:
         default=None,
         help=f"Path to agent YAML config (single-agent mode; default: {DEFAULT_AGENT_YAML})",
     )
+    parser.add_argument(
+        "--chats",
+        action="store_true",
+        default=False,
+        help="List all saved chats and exit.",
+    )
+    parser.add_argument(
+        "--chat",
+        default=None,
+        help="Resume a specific chat by ID.",
+    )
     args = parser.parse_args()
+
+    # --- ChatManager instance for all modes ---
+    chat_mgr = ChatManager()
+
+    # Handle --chats flag: list chats and exit
+    if args.chats:
+        print(chat_mgr.format_chat_list())
+        return
+
+    # Handle --chat <id> flag: set the chat to resume
+    if args.chat:
+        if not chat_mgr.load_chat(args.chat):
+            print(f"ERROR: Chat '{args.chat}' not found.")
+            return
 
     # Determine mode: if --team is explicitly given, or if --agent is NOT given
     # and the default team config exists, use team mode.
@@ -119,12 +147,12 @@ def main() -> None:
     if team_given or not agent_given:
         # Team mode
         team_path = resolve_path(args.team or DEFAULT_TEAM_YAML)
-        run_team(team_path)
+        run_team(team_path, chat_mgr)
     else:
         # Single-agent mode (--agent was explicitly given without --team)
         model_path = resolve_path(args.model or DEFAULT_MODEL_YAML)
         agent_path = resolve_path(args.agent)
-        run_single_agent(model_path, agent_path)
+        run_single_agent(model_path, agent_path, chat_mgr)
 
 
 if __name__ == "__main__":

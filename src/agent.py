@@ -20,6 +20,7 @@ import yaml
 from model import Model
 from tools import get_tool_schemas, call_tool, safe_json_loads, configure_risk_model
 from input_handler import setup_readline, get_input
+from chat_manager import ChatManager
 
 
 @dataclass
@@ -32,6 +33,7 @@ class Agent:
     max_turns: int = 1000
     tool_names: list[str] = field(default_factory=list)
     _cwd: str = field(default_factory=os.getcwd)
+    chat_manager: ChatManager | None = None
 
     # ------------------------------------------------------------------
     #  Factory: build from a YAML file
@@ -258,29 +260,78 @@ class Agent:
             messages.pop()
             return messages
 
-    def chat_loop(self) -> None:
-        """Run an interactive chat loop (stdin/stdout)."""
+    def chat_loop(self, chat_manager: ChatManager | None = None) -> None:
+        """Run an interactive chat loop (stdin/stdout).
+
+        If a ChatManager is provided (via argument or self.chat_manager),
+        messages are persisted to the chat database and /chats is supported.
+        Otherwise, runs the original non-persistent loop.
+        """
+        cm = chat_manager or self.chat_manager
+        if cm is None:
+            # No chat manager — run without persistence (backward compat)
+            setup_readline()
+            print(f"🤖 {self.name} — Chat mode")
+            print("Type your task below. Type 'exit' or 'quit' to end the session.")
+            print()
+
+            messages: list[dict] = []
+            if self.system_prompt:
+                messages.append({"role": "system", "content": self.system_prompt})
+
+            while True:
+                user_input = get_input()
+
+                if not user_input:
+                    continue
+                if user_input.lower() in ("exit", "quit"):
+                    print("👋 Goodbye!")
+                    break
+
+                try:
+                    messages = self.agent_turn(messages, user_input)
+                except RuntimeError:
+                    # Error already printed by agent_turn
+                    continue
+            return
+
         setup_readline()
+
+        # Determine if we're resuming a chat
+        if cm.current_chat_id:
+            chat_data = cm.load_chat(cm.current_chat_id)
+            messages = chat_data.get("messages", []) if chat_data else []
+            if messages:
+                print(f"📂 Resuming chat: {cm.current_chat_id}")
+                print(f"   Title: {chat_data.get('title', 'N/A')}")
+        else:
+            chat_id = cm.create_chat(mode="single")
+            print(f"💬 New chat: {chat_id}")
+            messages = []
+            if self.system_prompt:
+                messages.append({"role": "system", "content": self.system_prompt})
 
         print(f"🤖 {self.name} — Chat mode")
         print("Type your task below. Type 'exit' or 'quit' to end the session.")
         print()
 
-        messages: list[dict] = []
-        if self.system_prompt:
-            messages.append({"role": "system", "content": self.system_prompt})
-
         while True:
             user_input = get_input()
-
             if not user_input:
                 continue
             if user_input.lower() in ("exit", "quit"):
+                cm.save_messages(messages)
                 print("👋 Goodbye!")
                 break
+            if user_input == "/chats":
+                print()
+                print(cm.format_chat_list())
+                print()
+                continue
 
             try:
                 messages = self.agent_turn(messages, user_input)
+                cm.save_messages(messages)
             except RuntimeError:
                 # Error already printed by agent_turn
                 continue

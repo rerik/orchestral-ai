@@ -18,6 +18,7 @@ from model import Model
 from agent import Agent
 from tools import get_tool_schemas, call_tool, safe_json_loads, configure_risk_model
 from input_handler import setup_readline, get_input
+from chat_manager import ChatManager
 
 
 @dataclass
@@ -31,6 +32,7 @@ class Team:
     name: str
     host_agent: Agent
     member_agents: dict[str, Agent]  # name -> Agent
+    chat_manager: ChatManager | None = None
 
     # ------------------------------------------------------------------
     #  Factory: build from a YAML file
@@ -308,9 +310,68 @@ class Team:
     #  Interactive chat loop
     # ------------------------------------------------------------------
 
-    def chat_loop(self) -> None:
-        """Run an interactive chat loop with the host orchestrating the team."""
+    def chat_loop(self, chat_manager: ChatManager | None = None) -> None:
+        """Run an interactive chat loop with the host orchestrating the team.
+
+        If a ChatManager is provided (via argument or self.chat_manager),
+        messages are persisted to the chat database and /chats is supported.
+        Otherwise, runs the original non-persistent loop.
+        """
+        cm = chat_manager or self.chat_manager
+        if cm is None:
+            # No chat manager — run without persistence (backward compat)
+            setup_readline()
+            print(f"🤖 Team '{self.name}' — Multi-Agent Chat")
+            print(f"   Host: {self.host_agent.name}")
+            if self.member_agents:
+                print(f"   Members: {', '.join(self.member_agents.keys())}")
+            else:
+                print("   Members: (none — host handles everything)")
+            print()
+            print("Type your task below. Type 'exit' or 'quit' to end the session.")
+            print()
+
+            messages: list[dict] = []
+            if self.host_agent.system_prompt:
+                messages.append({
+                    "role": "system",
+                    "content": self.host_agent.system_prompt,
+                })
+
+            while True:
+                user_input = get_input()
+
+                if not user_input:
+                    continue
+                if user_input.lower() in ("exit", "quit"):
+                    print("👋 Goodbye!")
+                    break
+
+                try:
+                    messages = self._host_turn(messages, user_input)
+                except RuntimeError:
+                    # Error already printed by _host_turn
+                    continue
+            return
+
         setup_readline()
+
+        # Determine if we're resuming a chat
+        if cm.current_chat_id:
+            chat_data = cm.load_chat(cm.current_chat_id)
+            messages = chat_data.get("messages", []) if chat_data else []
+            if messages:
+                print(f"📂 Resuming chat: {cm.current_chat_id}")
+                print(f"   Title: {chat_data.get('title', 'N/A')}")
+        else:
+            chat_id = cm.create_chat(mode="team")
+            print(f"💬 New chat: {chat_id}")
+            messages = []
+            if self.host_agent.system_prompt:
+                messages.append({
+                    "role": "system",
+                    "content": self.host_agent.system_prompt,
+                })
 
         print(f"🤖 Team '{self.name}' — Multi-Agent Chat")
         print(f"   Host: {self.host_agent.name}")
@@ -322,24 +383,23 @@ class Team:
         print("Type your task below. Type 'exit' or 'quit' to end the session.")
         print()
 
-        messages: list[dict] = []
-        if self.host_agent.system_prompt:
-            messages.append({
-                "role": "system",
-                "content": self.host_agent.system_prompt,
-            })
-
         while True:
             user_input = get_input()
-
             if not user_input:
                 continue
             if user_input.lower() in ("exit", "quit"):
+                cm.save_messages(messages)
                 print("👋 Goodbye!")
                 break
+            if user_input == "/chats":
+                print()
+                print(cm.format_chat_list())
+                print()
+                continue
 
             try:
                 messages = self._host_turn(messages, user_input)
+                cm.save_messages(messages)
             except RuntimeError:
                 # Error already printed by _host_turn
                 continue

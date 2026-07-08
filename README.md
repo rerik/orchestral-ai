@@ -31,6 +31,7 @@ smart_agent/
 │   ├── agent.py                   # Agent class — conversation loop & tool orchestration
 │   ├── team.py                    # Team class — multi-agent orchestration
 │   ├── tools.py                   # Tool registry — bash & read_file implementations
+│   ├── chat_manager.py            # Chat persistence — save, list, resume chats
 │   └── input_handler.py           # Terminal input helpers — readline & history
 ├── tests/
 │   ├── __init__.py
@@ -54,6 +55,7 @@ smart_agent/
 | `src/agent.py` | `Agent` dataclass — holds the system prompt, equipped tools, and max-turn limit. Runs the agent loop: sends user messages to the model, invokes tool calls, and returns results. Can be instantiated from a YAML file. |
 | `src/team.py` | Team orchestration — loads team config, creates host + member agents, injects delegation tools into the host, and runs the multi-agent chat loop. The host analyzes tasks, delegates subtasks to members, and synthesizes results. |
 | `src/tools.py` | Tool registry. Defines four tools — **`bash`** (safe shell execution with an allowlist and user confirmation), **`read_file`** (file reading with sensitive-file blocking), **`web_search`** (DuckDuckGo web search), and **`edit_file`** (exact-string find-and-replace with diff preview and confirmation). Each tool provides an LLM function schema and a handler. |
+| `src/chat_manager.py` | Chat persistence manager. Stores chat sessions as JSON files in `.orchestral-ai/` in the working directory. Supports creating, listing, loading, and deleting chats with auto-titling from the first user message. |
 | `src/input_handler.py` | Terminal input helpers for interactive mode. Provides **`setup_readline`** for persistent command history across sessions and **`get_input`** for safe input with EOF/KeyboardInterrupt handling. |
 
 ### Test Suite
@@ -86,6 +88,43 @@ smart_agent/
 
 4. **Synthesis** — The host collects all delegated results, synthesizes them into a coherent final answer, and presents it to the user. If the team has no member agents, the host handles everything itself.
 
+### Chat Management
+
+All chat sessions are automatically persisted to a `.orchestral-ai/` directory
+created in the working directory where the agent is launched:
+
+```
+.orchestral-ai/
+├── index.json              # index of all chats with metadata (ID, title, timestamps, mode, message count)
+└── chats/
+    ├── 86b73364ec4b.json   # individual chat files with full message history
+    └── ...
+```
+
+**Features:**
+- **Automatic saving** — Messages are persisted after every agent turn and on exit.
+- **Auto-titling** — Each chat is titled automatically from the first user message (truncated to 60 characters).
+- **Resume** — Reload any previous chat and continue exactly where you left off.
+- **List** — View all saved chats with IDs, titles, modes, and message counts.
+- **Mode tracking** — Chats remember whether they were created in team or single-agent mode.
+
+**CLI flags:**
+
+```bash
+# List all saved chats with IDs, titles, and metadata
+python src/main.py --chats
+
+# Resume a specific chat by its ID
+python src/main.py --chat 86b73364ec4b
+```
+
+**In-chat commands:**
+
+While in an interactive session, you can type `/chats` at the prompt to list all
+saved chats without leaving the conversation.
+
+Running with no flags starts a **new chat** (team mode, by default).
+
 ## 🚀 How to Run
 
 ### Prerequisites
@@ -111,27 +150,32 @@ The model config (`configs/models/deepseek.yaml`) reads the key from the `DEEPSE
 
 ### Execution
 
-**Team mode (default):**
+**Starting a new chat:**
 
 ```bash
-# Team mode (default)
+# Team mode (default) — starts a new chat
 python src/main.py
 
-# Team mode with custom config
+# Team mode with custom config — starts a new chat
 python src/main.py --team configs/team.yaml
+
+# Single-agent mode — starts a new chat
+python src/main.py --agent configs/agents/coding_agent.yaml
 ```
 
-**Single-agent mode:**
+**Managing saved chats:**
 
 ```bash
-# Single-agent mode
-python src/main.py --agent configs/agents/coding_agent.yaml
+# List all saved chats (shows IDs, titles, modes, message counts, timestamps)
+python src/main.py --chats
 
-# Single-agent mode with custom model
-python src/main.py --model configs/models/deepseek.yaml --agent configs/agents/coding_agent.yaml
+# Resume a specific chat by ID
+python src/main.py --chat 86b73364ec4b
 ```
 
-Once started, the agent enters an interactive chat loop. Type your task and press Enter. Type `exit` or `quit` to end the session.
+**Inside a chat session:**
+- Type `/chats` to list all saved chats without leaving the conversation.
+- Type `exit` or `quit` to end the session (messages are saved automatically).
 
 ### Running Tests
 
