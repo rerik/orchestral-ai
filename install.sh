@@ -10,10 +10,22 @@
 # It detects whether it is being run from within the repository (local mode)
 # or from a remote pipe (GitHub mode), and installs accordingly.
 #
+# By default, the script creates a symlink at /usr/local/bin/orchestral-cli
+# so the command is available system-wide.  Set INSTALL_BIN_DIR to override.
+#
 # Requirements: Python 3.10+, pip.
 # Supported on: Linux and macOS.
 
 set -e
+
+# ────────────────────────────────────────────────────────────
+# User-configurable variables
+# ────────────────────────────────────────────────────────────
+# Directory where the orchestral-cli symlink will be created.
+# /usr/local/bin is the standard location for locally-installed
+# programs on Unix systems.  Change this if you prefer a different
+# directory (e.g. "$HOME/.local/bin").
+INSTALL_BIN_DIR="${INSTALL_BIN_DIR:-/usr/local/bin}"
 
 # ────────────────────────────────────────────────────────────
 # Helper functions
@@ -157,23 +169,90 @@ case "$mode" in
 esac
 
 # ────────────────────────────────────────────────────────────
-# 5. Verify installation
+# 5. Locate the installed binary
+# ────────────────────────────────────────────────────────────
+say "Locating installed binary..."
+
+orchestral_bin=''
+
+# Use sysconfig to get the scripts directory for the current Python
+# environment.  This works correctly across pyenv, virtualenv, system
+# Python, and other installations (e.g. pyenv places scripts in
+# .../versions/3.12.8/bin, not .../versions/3.12.8/lib/python3.12/bin).
+pip_bin_dir=$("$python_cmd" -c "import sysconfig; print(sysconfig.get_path('scripts'))" 2>/dev/null)
+
+if [ -n "$pip_bin_dir" ] && [ -x "$pip_bin_dir/orchestral-cli" ]; then
+    orchestral_bin="$pip_bin_dir/orchestral-cli"
+fi
+
+# Fallback: search common locations.
+if [ -z "$orchestral_bin" ]; then
+    for loc in "$HOME/.local/bin" "$HOME/Library/Python/3."*/bin /usr/local/bin /usr/bin; do
+        for resolved in "$loc"; do
+            if [ -x "$resolved/orchestral-cli" ]; then
+                orchestral_bin="$resolved/orchestral-cli"
+                break 2
+            fi
+        done
+    done
+fi
+
+if [ -z "$orchestral_bin" ]; then
+    warn "Could not locate installed orchestral-cli binary."
+    say "   It may be installed in a non-standard location."
+    say "   Try:  which orchestral-cli  or  find / -name orchestral-cli 2>/dev/null"
+    exit 0
+fi
+
+say "   Found: $orchestral_bin"
+
+# ────────────────────────────────────────────────────────────
+# 6. Install (symlink) to INSTALL_BIN_DIR
+# ────────────────────────────────────────────────────────────
+say "Installing to $INSTALL_BIN_DIR..."
+
+target="$INSTALL_BIN_DIR/orchestral-cli"
+
+# If the target already exists and is the same file, we are done.
+if [ -L "$target" ] && [ "$(readlink "$target")" = "$orchestral_bin" ]; then
+    say "   ✓ Symlink already exists: $target -> $orchestral_bin"
+elif [ -e "$target" ] || [ -L "$target" ]; then
+    warn "File '$target' already exists (different from current install)."
+    warn "   Run with INSTALL_BIN_DIR to choose another location, or remove it manually."
+else
+    # Create the symlink.  Try sudo if the directory isn't writable.
+    if [ -w "$INSTALL_BIN_DIR" ]; then
+        ln -sf "$orchestral_bin" "$target"
+    elif command -v sudo >/dev/null 2>&1; then
+        say "   (using sudo — may ask for your password)"
+        sudo mkdir -p "$INSTALL_BIN_DIR" 2>/dev/null || true
+        sudo ln -sf "$orchestral_bin" "$target"
+    else
+        warn "Cannot write to '$INSTALL_BIN_DIR' and sudo is not available."
+        warn "   Run:  sudo ln -sf \"$orchestral_bin\" \"$target\""
+    fi
+    if [ -L "$target" ]; then
+        say "   ✓ Symlink created: $target -> $orchestral_bin"
+    fi
+fi
+
+# ────────────────────────────────────────────────────────────
+# 7. Verify final installation
 # ────────────────────────────────────────────────────────────
 say "Verifying installation..."
 
 if command -v orchestral-cli >/dev/null 2>&1; then
-    say "✓ orchestral-cli installed successfully!"
+    say "✓ orchestral-cli is on PATH and ready to use!"
+    orchestral-cli --help >/dev/null 2>&1 || true
+elif [ -x "$target" ]; then
+    say "✓ orchestral-cli installed at: $target"
+    say "   Make sure '$INSTALL_BIN_DIR' is on your PATH."
+    case ":$PATH:" in
+        *:"$INSTALL_BIN_DIR":*) ;;
+        *) warn "   '$INSTALL_BIN_DIR' is not on your PATH." ;;
+    esac
 else
-    # The command might be in a local bin directory not on PATH.
-    # Check common locations to give a helpful hint.
-    for loc in "$HOME/.local/bin" "$HOME/Library/Python/3."*/bin; do
-        if [ -f "$loc/orchestral-cli" ] || [ -x "$loc/orchestral-cli" ]; then
-            warn "orchestral-cli is installed at '$loc/orchestral-cli' but not on your PATH."
-            say "   Add to PATH:  export PATH=\"\$PATH:$loc\""
-            exit 0
-        fi
-    done
-    warn "orchestral-cli was installed but 'orchestral-cli' command was not found on PATH."
-    say "   If you installed with --user, add ~/.local/bin to your PATH."
-    exit 0
+    warn "orchestral-cli was installed but not found on PATH."
+    say "   Binary: $orchestral_bin"
+    say "   Target: $target"
 fi
