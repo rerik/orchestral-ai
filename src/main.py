@@ -96,7 +96,13 @@ def run_team(team_path: str, chat_manager: ChatManager | None = None) -> None:
 
 
 def main() -> None:
-    load_dotenv()
+    # Load .env files from multiple locations.
+    # Priority: .env > ./.orchestral-ai/.env > ~/.orchestral-ai/.env
+    # (override=False so earlier values take precedence)
+    load_dotenv()  # standard .env (highest priority)
+    for env_path in ("./.orchestral-ai/.env", os.path.expanduser("~/.orchestral-ai/.env")):
+        if os.path.isfile(env_path):
+            load_dotenv(dotenv_path=env_path, override=False)
 
     parser = argparse.ArgumentParser(
         description="Smart Agent — configurable AI agent (single or multi-agent team)"
