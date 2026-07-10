@@ -22,6 +22,12 @@ smart_agent/
 │   ├── host_system_prompt.txt     # System prompt for the host agent
 │   ├── research_system_prompt.txt # System prompt for the research agent
 │   └── system_prompt.txt          # System prompt template (single agent)
+├── examples/                      # Reference configs — copy into ./.orchestral-ai/ or ~/.orchestral-ai/ to customize
+│   ├── configs/
+│   │   ├── agents/                # All agent YAML configs
+│   │   ├── models/                # All model YAML configs
+│   │   └── team.yaml
+│   └── prompts/                   # All system prompt templates
 ├── src/
 │   ├── __init__.py                # Package marker
 │   ├── main.py                    # Entry point — CLI parsing, team vs single mode
@@ -48,10 +54,10 @@ smart_agent/
 
 ### 1. Entry Point (`src/main.py`)
 Parses CLI arguments (`--team`, `--model`, `--agent`), supports two modes:
-- **Team mode** (`--team` flag or default): Loads a team config and runs multi-agent orchestration via the `Team` class.
-- **Single mode** (`--agent` flag): Loads a single Model and Agent from YAML config files, registers the model in a lookup table, and starts the interactive chat loop.
+- **Single-agent mode** (default): Loads a single Model and Agent from YAML config files, registers the model in a lookup table, and starts the interactive chat loop.
+- **Team mode** (`--team` flag): Loads a team config and runs multi-agent orchestration via the `Team` class.
 
-It also resolves relative paths against the project root.
+Config files are resolved by searching three locations in priority order: `./.orchestral-ai/` (project-local), `~/.orchestral-ai/` (user-global), then the package directory (built-in fallback). This lets you customize configs without modifying the installed package.
 
 ### 2. Model (`src/model.py`)
 A `Model` dataclass that encapsulates an LLM provider configuration:
@@ -67,12 +73,20 @@ An `Agent` dataclass that orchestrates the conversation:
 ### 4. Team (`src/team.py`)
 A `Team` dataclass that orchestrates multi-agent collaboration:
 - **Team config** — Loaded from a YAML file defining a host agent and a list of member agents, each with a name, agent config path, and description.
-- **`from_yaml` factory** — Auto-loads all model configs into a registry, resolves agent paths relative to the project root, creates the host and all member agents, and injects member descriptions into the host's system prompt.
+- **`from_yaml` factory** — Searches all config directories (local → user-global → package fallback) for model configs, auto-loads found models into a registry, resolves agent paths via the same search order, creates the host and all member agents, and injects member descriptions into the host's system prompt.
 - **Delegation tools** — Each member agent is exposed to the host as a dynamically-generated tool (`delegate_to_<name>`). The tool schema includes the member's description so the LLM knows when to use it.
 - **Host turn** — `_host_turn(messages, user_message)` extends the single-agent turn by combining the host's own tools with delegation tools. When a delegation tool is called, `_handle_delegation` runs the member agent on the subtask and returns its result.
 - **Interactive chat** — `chat_loop()` provides a REPL where the host orchestrates the team. If no member agents exist, the host handles everything itself.
 
-### 5. Tools (`src/tools.py`)
+### 5. Config Resolution (`src/main.py` — `find_config_path`, `get_config_search_dirs`)
+Config files (models, agents, team) are resolved by searching three locations in priority order:
+1. **`./.orchestral-ai/`** — Project-local overrides (highest priority)
+2. **`~/.orchestral-ai/`** — User-global overrides  
+3. **Package directory** — Built-in defaults (fallback)
+
+The `find_config_path(relative_path)` function walks these directories in order and returns the first existing match. Both `main.py` (for single-agent mode) and `team.py` (for team mode) use this to resolve configs. The `examples/` directory contains reference copies of all built-in configs — copy them into your `.orchestral-ai/` to customize.
+
+### 6. Tools (`src/tools.py`)
 Defines the tool registry (`TOOL_REGISTRY`) with four tools:
 - **`bash`** — Executes shell commands with an allowlist of safe utilities (`ls`, `grep`, `cat`, etc.). Commands outside the list require explicit user confirmation. Has a 120-second timeout.
 - **`read_file`** — Reads file contents. Blocks sensitive files (`.env`, keys, credentials, secrets, config YAMLs, etc.) and directories (`.git`, `.ssh`, `node_modules`, etc.).
@@ -86,12 +100,12 @@ Additional utilities in `tools.py`:
 - **`configure_risk_model(model)`** — Sets up an optional AI model for intelligent bash command risk assessment. Falls back to rule-based assessment when `None` or on API errors.
 - **`configure_summary_model(model)`** — Sets up an optional AI model for bash command summarization. Falls back to rule-based summarization when `None` or on API errors.
 
-### 6. Input Handler (`src/input_handler.py`)
+### 7. Input Handler (`src/input_handler.py`)
 Provides enhanced terminal input functionality used by both the Agent and Team interactive loops:
 - **`setup_readline(history_file)`** — Configures GNU readline with persistent history (~/.smart_agent_history), saving up to 1000 entries across sessions. Gracefully degrades if readline is unavailable.
 - **`get_input(prompt)`** — Thin wrapper around `input()` that strips input and handles EOF/KeyboardInterrupt by cleanly exiting.
 
-### 7. Tests (`tests/`)
+### 8. Tests (`tests/`)
 Comprehensive test suite covering all modules across 5 files:
 
 | Test file | Coverage |
@@ -100,20 +114,20 @@ Comprehensive test suite covering all modules across 5 files:
 | `test_model.py` | `Model.from_yaml` (all parameters, env vars, headers, edge cases), `Model.chat` (payload construction, tool calls, auth headers, errors) |
 | `test_agent.py` | `Agent.from_yaml` (model resolution — registry/path/inline, system prompt — literal/file/template, tools, validation), `agent_turn` (simple response, tool calls, max turns), `chat_loop` (quit/exit/EOF/KeyboardInterrupt, system prompt, empty input) |
 | `test_team.py` | `Team.from_yaml` (team config loading, member descriptions, model registry, validation), delegation tools, host turn with delegation, chat loop |
-| `test_main.py` | `resolve_path`, `main` (missing configs, successful run, default paths, model registry wiring) |
+| `test_main.py` | `resolve_path`, `find_config_path`, `get_config_search_dirs`, `main` (missing configs, successful run, default paths, model registry wiring) |
 
 Run tests with:
 ```bash
 pytest tests/ -v
 ```
 
-### 8. Configuration (`configs/`)
-YAML files that drive the entire framework without code changes:
+### 9. Configuration (`configs/`)
+YAML files that drive the entire framework without code changes. Config files are searched in three locations: `./.orchestral-ai/` (project-local), `~/.orchestral-ai/` (user-global), then the package directory (built-in fallback). See **Section 5** for details.
 - **Model configs** (`configs/models/`) — Define LLM providers (base URL, model ID, API key env var, temperature, cost coefficient, etc.).
 - **Agent configs** (`configs/agents/`) — Tie together a model, system prompt, and tool set.
 - **Team config** (`configs/team.yaml`) — Defines a team with a host agent and member agents, each with a name, agent path, and description.
 
-### 9. Prompts (`prompts/`)
+### 10. Prompts (`prompts/`)
 Contains system prompt templates that define agent behavior, workflow, and constraints:
 - `system_prompt.txt` — General-purpose single-agent prompt.
 - `coding_system_prompt.txt` — Coding agent prompt covering tool usage, workflow, and file writing best practices.
@@ -127,7 +141,7 @@ The `{cwd}` placeholder is substituted at load time with the agent's working dir
 ### Single-Agent Mode
 ```
 User input
-  → main.py (CLI parsing, config loading)
+  → main.py (CLI parsing, detects mode, resolves config paths)
     → Agent.chat_loop()
       → Agent.agent_turn(messages, user_input)
         → Model.chat(messages, tools)
@@ -150,7 +164,7 @@ User input
 ## Adding New Components
 
 - **New tool** — Define the schema + handler in `src/tools.py` and add it to `TOOL_REGISTRY`. Then reference it in an agent YAML's `tools` list.
-- **New model** — Add a YAML file in `configs/models/` and reference it from an agent config.
+- **New model** — Add a YAML file in `configs/models/` (or in `./.orchestral-ai/configs/models/` or `~/.orchestral-ai/configs/models/` for overrides) and reference it from an agent config.
 - **New agent** — Add a YAML file in `configs/agents/` with a model reference, system prompt, and tool list.
 - **New team member agent** — Add the agent YAML in `configs/agents/`, add a system prompt in `prompts/`, then add an entry in `configs/team.yaml` under `agents` with the agent's name, config path, and description.
 - **New tests** — Add test files under `tests/` following the existing patterns (one test file per source module, using pytest fixtures from `conftest.py`).
@@ -166,5 +180,6 @@ When making changes to the codebase, always update the following as needed:
    - Update the **component descriptions** if behavior, parameters, or interfaces change.
    - Update the **test coverage table** if the test suite changes significantly.
    - Update the **configuration reference** if YAML keys are added, removed, or changed.
+   - Update **`examples/`** if config files or prompts are added, removed, or renamed.
 
 3. **Requirements (`requirements.txt`)** — If new dependencies are introduced, add them to `requirements.txt`.

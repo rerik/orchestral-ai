@@ -17,11 +17,6 @@ import sys
 
 from dotenv import load_dotenv
 
-from .model import Model
-from .agent import Agent
-from .team import Team
-from .chat_manager import ChatManager
-
 # ---------------------------------------------------------------------------
 #  Default config paths (relative to the project root)
 # ---------------------------------------------------------------------------
@@ -29,6 +24,53 @@ from .chat_manager import ChatManager
 DEFAULT_MODEL_YAML = "configs/models/deepseek.yaml"
 DEFAULT_AGENT_YAML = "configs/agents/coding_agent.yaml"
 DEFAULT_TEAM_YAML = "configs/team.yaml"
+
+
+def get_config_search_dirs() -> list[str]:
+    """Return config directory search paths in priority order.
+
+    1. ./.orchestral-ai/   (project-local)
+    2. ~/.orchestral-ai/   (user-global)
+    3. Package directory    (built-in fallback)
+    """
+    package_dir = os.path.dirname(os.path.abspath(__file__))
+    return [
+        os.path.join(".", ".orchestral-ai"),
+        os.path.join(os.path.expanduser("~"), ".orchestral-ai"),
+        package_dir,
+    ]
+
+
+def find_config_path(relative_path: str) -> str:
+    """Search for a config file in standard locations.
+
+    If *relative_path* is absolute, return it unchanged.
+
+    Search order:
+    1. ./.orchestral-ai/   (project-local)
+    2. ~/.orchestral-ai/   (user-global)
+    3. Package directory    (built-in fallback)
+
+    Returns the first existing path found, or the package-directory
+    path (which may not exist) as a default.
+    """
+    if os.path.isabs(relative_path):
+        return relative_path
+
+    for root in get_config_search_dirs():
+        candidate = os.path.normpath(os.path.join(root, relative_path))
+        if os.path.isfile(candidate):
+            return candidate
+
+    # Default: return the package path (caller handles file-not-found)
+    package_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.normpath(os.path.join(package_dir, relative_path))
+
+
+from .model import Model
+from .agent import Agent
+from .team import Team
+from .chat_manager import ChatManager
 
 
 def resolve_path(path: str) -> str:
@@ -149,19 +191,16 @@ def main() -> None:
             print(f"ERROR: Chat '{args.chat}' not found.")
             return
 
-    # Determine mode: if --team is explicitly given, or if --agent is NOT given
-    # and the default team config exists, use team mode.
-    team_given = args.team is not None
-    agent_given = args.agent is not None
-
-    if team_given or not agent_given:
+    # Determine mode: team mode only when --team is explicitly given.
+    # Otherwise, single-agent mode is the default.
+    if args.team is not None:
         # Team mode
-        team_path = resolve_path(args.team or DEFAULT_TEAM_YAML)
+        team_path = find_config_path(args.team or DEFAULT_TEAM_YAML)
         run_team(team_path, chat_mgr)
     else:
-        # Single-agent mode (--agent was explicitly given without --team)
-        model_path = resolve_path(args.model or DEFAULT_MODEL_YAML)
-        agent_path = resolve_path(args.agent)
+        # Single-agent mode (default)
+        model_path = find_config_path(args.model or DEFAULT_MODEL_YAML)
+        agent_path = find_config_path(args.agent or DEFAULT_AGENT_YAML)
         run_single_agent(model_path, agent_path, chat_mgr)
 
 

@@ -19,6 +19,7 @@ from .agent import Agent
 from .tools import get_tool_schemas, call_tool, safe_json_loads, configure_risk_model
 from .input_handler import setup_readline, get_input
 from .chat_manager import ChatManager
+from .main import find_config_path, get_config_search_dirs
 
 
 @dataclass
@@ -65,27 +66,21 @@ class Team:
         if "host" not in data or "agent" not in data.get("host", {}):
             raise ValueError("Team YAML missing required key: 'host.agent'")
 
-        # --- Resolve paths relative to the team YAML file ---
-        team_dir = os.path.dirname(os.path.abspath(yaml_path))
-        project_root = os.path.dirname(team_dir)  # team.yaml is in configs/
-        
-        def _resolve(p: str) -> str:
-            if os.path.isabs(p):
-                return p
-            return os.path.normpath(os.path.join(project_root, p))
-
         # --- Auto-load all model configs so agents can reference them by name ---
+        # Searches all config directories; higher-priority dirs win (first found sticks).
         model_registry: dict[str, Model] = {}
-        models_dir = os.path.join(project_root, "configs", "models")
-        if os.path.isdir(models_dir):
-            for fname in sorted(os.listdir(models_dir)):
-                if fname.endswith((".yaml", ".yml")):
-                    model_path = os.path.join(models_dir, fname)
-                    try:
-                        model = Model.from_yaml(model_path)
-                        model_registry[model.name] = model
-                    except Exception:
-                        pass  # skip broken model configs
+        for search_dir in get_config_search_dirs():
+            models_dir = os.path.join(search_dir, "configs", "models")
+            if os.path.isdir(models_dir):
+                for fname in sorted(os.listdir(models_dir)):
+                    if fname.endswith((".yaml", ".yml")):
+                        model_path = os.path.join(models_dir, fname)
+                        try:
+                            model = Model.from_yaml(model_path)
+                            if model.name not in model_registry:
+                                model_registry[model.name] = model
+                        except Exception:
+                            pass  # skip broken model configs
 
         # --- Configure AI risk assessment for bash commands ---
         # Use the cheapest available model; fall back to host model; 
@@ -98,7 +93,7 @@ class Team:
         configure_risk_model(risk_model)
 
         # --- Load host agent ---
-        host_agent_path = _resolve(data["host"]["agent"])
+        host_agent_path = find_config_path(data["host"]["agent"])
         if not os.path.isfile(host_agent_path):
             raise ValueError(f"Host agent config not found: {host_agent_path}")
         host_agent = Agent.from_yaml(host_agent_path, model_registry=model_registry)
@@ -109,7 +104,7 @@ class Team:
 
         for entry in data.get("agents", []) or []:
             name = entry.get("name", "").strip()
-            agent_path = _resolve(entry.get("agent", ""))
+            agent_path = find_config_path(entry.get("agent", ""))
             description = entry.get("description", "").strip()
 
             if not name:

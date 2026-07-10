@@ -33,6 +33,12 @@ orchestral-ai/
 │       ├── host_system_prompt.txt     # System prompt for the host agent
 │       ├── research_system_prompt.txt # System prompt for the research agent
 │       └── system_prompt.txt          # System prompt template (single agent)
+├── examples/                       # Reference configs — copy into ./.orchestral-ai/ or ~/.orchestral-ai/ to customize
+│   ├── configs/
+│   │   ├── agents/                 # All agent YAML configs
+│   │   ├── models/                 # All model YAML configs
+│   │   └── team.yaml
+│   └── prompts/                    # All system prompt templates
 ├── tests/
 │   ├── __init__.py
 │   ├── conftest.py                # Shared fixtures (temp_dir, temp_file)
@@ -52,7 +58,7 @@ orchestral-ai/
 
 | File | Purpose |
 |------|---------|
-| `src/main.py` | Entry point. Parses CLI arguments, supports two modes: **team mode** (`--team` flag or default) for multi-agent orchestration, and **single mode** (`--agent` flag) for single-agent chat. Loads configs and starts the appropriate loop. |
+| `src/main.py` | Entry point. Parses CLI arguments, supports two modes: **single-agent mode** (default) for single-agent chat, and **team mode** (`--team` flag) for multi-agent orchestration. Resolves config paths by searching `.orchestral-ai/` (local → user-global → package fallback). Loads configs and starts the appropriate loop. |
 | `src/model.py` | `Model` dataclass — encapsulates LLM provider settings (base URL, model ID, API key, temperature, etc.) and handles `/chat/completions` requests. Can be instantiated from a YAML file. |
 | `src/agent.py` | `Agent` dataclass — holds the system prompt, equipped tools, and max-turn limit. Runs the agent loop: sends user messages to the model, invokes tool calls, and returns results. Can be instantiated from a YAML file. |
 | `src/team.py` | Team orchestration — loads team config, creates host + member agents, injects delegation tools into the host, and runs the multi-agent chat loop. The host analyzes tasks, delegates subtasks to members, and synthesizes results. |
@@ -68,7 +74,7 @@ orchestral-ai/
 | `tests/test_model.py` | `Model.from_yaml` (all parameters, env vars, headers, edge cases), `Model.chat` (payload construction, tool calls, auth headers, errors) |
 | `tests/test_agent.py` | `Agent.from_yaml` (model resolution — registry/path/inline, system prompt — literal/file/template, tools, validation), `agent_turn` (simple response, tool calls, max turns), `chat_loop` (quit/exit/EOF/KeyboardInterrupt, system prompt, empty input) |
 | `tests/test_team.py` | `Team.from_yaml` (team config loading, member descriptions, model registry, validation), delegation tools, host turn with delegation, chat loop |
-| `tests/test_main.py` | `resolve_path`, `main` (missing configs, successful run, default paths, model registry wiring) |
+| `tests/test_main.py` | `resolve_path`, `find_config_path`, `get_config_search_dirs`, `main` (missing configs, successful run, default paths, model registry wiring) |
 
 ## 💡 How It Works
 
@@ -89,6 +95,27 @@ orchestral-ai/
 3. **Delegation** — Each member agent is exposed to the host as a delegation tool (`delegate_to_coder`, `delegate_to_researcher`, etc.). The host calls these tools with clear, self-contained subtask descriptions. Member agents work independently and return their results.
 
 4. **Synthesis** — The host collects all delegated results, synthesizes them into a coherent final answer, and presents it to the user. If the team has no member agents, the host handles everything itself.
+
+### Config Search Paths
+
+Config files (models, agents, team) are resolved by searching three locations in
+priority order:
+
+1. **`./.orchestral-ai/`** — Project-local overrides (highest priority)
+2. **`~/.orchestral-ai/`** — User-global overrides
+3. **Package directory** — Built-in defaults (fallback)
+
+This means you can customize any config without modifying the installed package.
+For example, to override the default model with your own settings:
+
+```bash
+mkdir -p ./.orchestral-ai/configs/models
+cp examples/configs/models/deepseek.yaml ./.orchestral-ai/configs/models/
+# Edit ./.orchestral-ai/configs/models/deepseek.yaml as needed
+```
+
+The `examples/` directory contains reference copies of all built-in configs and
+prompts — use them as starting points for your custom overrides.
 
 ### Chat Management
 
@@ -125,7 +152,7 @@ orchestral-cli --chat 86b73364ec4b
 While in an interactive session, you can type `/chats` at the prompt to list all
 saved chats without leaving the conversation.
 
-Running with no flags starts a **new chat** (team mode, by default).
+Running with no flags starts a **new chat** in single-agent mode (the default).
 
 ## 📦 Installation
 
@@ -193,14 +220,14 @@ The model config (`configs/models/deepseek.yaml`) reads the key from the `DEEPSE
 **Starting a new chat:**
 
 ```bash
-# Team mode (default) — starts a new chat
+# Single-agent mode (default) — starts a new chat
 orchestral-cli
 
-# Team mode with custom config — starts a new chat
-orchestral-cli --team configs/team.yaml
-
-# Single-agent mode — starts a new chat
+# Single-agent mode with custom agent — starts a new chat
 orchestral-cli --agent configs/agents/coding_agent.yaml
+
+# Team mode — starts a new chat with multi-agent orchestration
+orchestral-cli --team configs/team.yaml
 ```
 
 **Managing saved chats:**
