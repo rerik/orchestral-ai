@@ -17,10 +17,10 @@ from typing import Any
 
 import yaml
 
-from model import Model
-from tools import get_tool_schemas, call_tool, safe_json_loads, configure_risk_model
-from input_handler import setup_readline, get_input
-from chat_manager import ChatManager
+from .model import Model
+from .tools import get_tool_schemas, call_tool, safe_json_loads, configure_risk_model
+from .input_handler import setup_readline, get_input
+from .chat_manager import ChatManager
 
 
 @dataclass

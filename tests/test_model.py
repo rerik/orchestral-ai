@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import pytest
 import yaml
-from model import Model
+from smart_agent.model import Model
 
 
 # ============================================================================

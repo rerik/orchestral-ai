@@ -7,9 +7,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import pytest
 import yaml
-from model import Model
-from agent import Agent
-from team import Team
+from smart_agent.model import Model
+from smart_agent.agent import Agent
+from smart_agent.team import Team
 
 
 # ============================================================================
@@ -603,7 +603,7 @@ class TestHostTurn:
             },
         }
         with patch.object(team.host_agent.model, "chat") as mock_chat, \
-             patch("tools._check_bash_permission", return_value=True):
+             patch("smart_agent.tools._check_bash_permission", return_value=True):
             mock_chat.side_effect = [
                 ("", [tool_call]),
                 ("Done.", []),
@@ -626,7 +626,7 @@ class TestHostTurn:
         }
         with patch.object(team.host_agent.model, "chat",
                           return_value=("", [tool_call])), \
-             patch("tools._check_bash_permission", return_value=True):
+             patch("smart_agent.tools._check_bash_permission", return_value=True):
             messages = []
             result = team._host_turn(messages, "Go")
             # user + 3*(assistant+tool) = 7 messages

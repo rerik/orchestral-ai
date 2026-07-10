@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import pytest
-from main import resolve_path, main
+from smart_agent.main import resolve_path, main
 
 
 # ============================================================================
@@ -97,7 +97,7 @@ class TestMain:
         # The default paths should exist in the project
         with patch("sys.exit") as mock_exit, \
              patch("builtins.input", side_effect=["quit"]), \
-             patch("main.load_dotenv"):
+             patch("smart_agent.main.load_dotenv"):
             # This should work because the actual config files exist
             main()
 

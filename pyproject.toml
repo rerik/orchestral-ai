@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=64.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smart_agent"
+version = "0.1.0"
+description = "Configurable AI agent framework with single-agent and multi-agent team modes"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "rerik"},
+]
+
+dependencies = [
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=5.1",
+    "ddgs>=5.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/rerik/orchestral-ai"
+Repository = "https://github.com/rerik/orchestral-ai.git"
+
+[project.scripts]
+orchestral-cli = "smart_agent.main:main"
+
+[tool.setuptools]
+packages = ["smart_agent"]
+package-dir = {"smart_agent" = "src"}
+
+[tool.setuptools.package-data]
+smart_agent = ["configs/**/*.yaml", "prompts/**/*.txt"]

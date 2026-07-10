@@ -8,8 +8,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import pytest
 import yaml
-from model import Model
-from agent import Agent
+from smart_agent.model import Model
+from smart_agent.agent import Agent
 
 
 # ============================================================================
@@ -278,7 +278,7 @@ class TestAgentTurn:
                 ("Done!", []),               # turn 2: final response (no tool calls)
             ]
 
-            with patch("tools._check_bash_permission", return_value=True):
+            with patch("smart_agent.tools._check_bash_permission", return_value=True):
                 messages = []
                 result = agent.agent_turn(messages, "Run command")
 
@@ -298,7 +298,7 @@ class TestAgentTurn:
         }
         # Always return a tool call — should stop after 3 turns
         with patch.object(agent.model, "chat", return_value=("", [tool_call])), \
-             patch("tools._check_bash_permission", return_value=True):
+             patch("smart_agent.tools._check_bash_permission", return_value=True):
             messages = []
             result = agent.agent_turn(messages, "Go")
 

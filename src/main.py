@@ -1,5 +1,5 @@
 """
-Entry point for the smart-agent framework.
+Entry point for the orchestral-ai framework.
 
 Supports two modes:
   1. Team mode (--team):    Multi-agent orchestration with a host + member agents
@@ -17,10 +17,10 @@ import sys
 
 from dotenv import load_dotenv
 
-from model import Model
-from agent import Agent
-from team import Team
-from chat_manager import ChatManager
+from .model import Model
+from .agent import Agent
+from .team import Team
+from .chat_manager import ChatManager
 
 # ---------------------------------------------------------------------------
 #  Default config paths (relative to the project root)
@@ -32,10 +32,14 @@ DEFAULT_TEAM_YAML = "configs/team.yaml"
 
 
 def resolve_path(path: str) -> str:
-    """If *path* is relative, resolve it against the project root."""
+    """If *path* is relative, resolve it against the package directory.
+
+    In development: src/ (where main.py lives alongside configs/, prompts/).
+    When installed: site-packages/smart_agent/.
+    """
     if os.path.isabs(path):
         return path
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    root = os.path.dirname(os.path.abspath(__file__))
     return os.path.normpath(os.path.join(root, path))
 
 

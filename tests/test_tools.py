@@ -6,8 +6,8 @@ from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-import tools
-from tools import (
+import smart_agent.tools as tools
+from smart_agent.tools import (
     _is_allowed,
     _check_bash_permission,
     _is_sensitive,
@@ -140,30 +140,30 @@ class TestReadFile:
 
 class TestRunBash:
     def test_runs_allowed_command(self):
-        with patch("tools._check_bash_permission", return_value=True):
+        with patch("smart_agent.tools._check_bash_permission", return_value=True):
             result = run_bash("echo hello")
             assert "hello" in result
             assert "Exit code: 0" in result
 
     def test_denied_by_user(self):
-        with patch("tools._check_bash_permission", return_value=False):
+        with patch("smart_agent.tools._check_bash_permission", return_value=False):
             result = run_bash("rm -rf /")
             assert "not allowed by user" in result
 
     def test_command_timeout(self):
-        with patch("tools._check_bash_permission", return_value=True), \
+        with patch("smart_agent.tools._check_bash_permission", return_value=True), \
              patch("subprocess.run", side_effect=subprocess.TimeoutExpired("sleep", 120)):
             result = run_bash("sleep 200")
             assert "timed out" in result.lower()
 
     def test_stderr_captured(self):
-        with patch("tools._check_bash_permission", return_value=True):
+        with patch("smart_agent.tools._check_bash_permission", return_value=True):
             result = run_bash("echo error >&2")
             assert "STDERR:" in result
             assert "error" in result
 
     def test_nonzero_exit_code(self):
-        with patch("tools._check_bash_permission", return_value=True):
+        with patch("smart_agent.tools._check_bash_permission", return_value=True):
             result = run_bash("exit 1")
             assert "Exit code: 1" in result
 
@@ -181,24 +181,24 @@ class TestCheckBashPermission:
 
     def test_complex_allowed_pipeline(self):
         """Pipelines of allowed commands should auto-pass."""
-        with patch("tools._is_allowed", return_value=True):
+        with patch("smart_agent.tools._is_allowed", return_value=True):
             assert _check_bash_permission("ls | grep test") is True
 
     def test_user_approves(self):
         """When command is not auto-allowed, user must say yes."""
-        with patch("tools._is_allowed", return_value=False), \
+        with patch("smart_agent.tools._is_allowed", return_value=False), \
              patch("builtins.input", return_value="y"), \
              patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))):
             assert _check_bash_permission("curl example.com") is True
 
     def test_user_rejects(self):
-        with patch("tools._is_allowed", return_value=False), \
+        with patch("smart_agent.tools._is_allowed", return_value=False), \
              patch("builtins.input", return_value="n"), \
              patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))):
             assert _check_bash_permission("curl example.com") is False
 
     def test_user_says_yes_full_word(self):
-        with patch("tools._is_allowed", return_value=False), \
+        with patch("smart_agent.tools._is_allowed", return_value=False), \
              patch("builtins.input", return_value="yes"), \
              patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))):
             assert _check_bash_permission("curl example.com") is True

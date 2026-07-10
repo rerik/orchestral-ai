@@ -7,32 +7,32 @@ Supports both **single-agent** and **multi-agent team** modes — the team mode 
 ## 📂 Structure
 
 ```
-smart_agent/
-├── configs/
-│   ├── agents/
-│   │   ├── coding_agent.yaml          # Agent config (model, tools, system prompt)
-│   │   ├── coding_agent_low.yaml      # Cheaper, faster model for simple coding tasks
-│   │   ├── coding_agent_high.yaml     # More capable model for complex coding tasks
-│   │   ├── host_agent.yaml            # Host agent config (team orchestrator)
-│   │   └── research_agent.yaml        # Research agent config (analysis & explanation)
-│   ├── models/
-│   │   ├── deepseek.yaml          # Model config (API endpoint, params)
-│   │   └── deepseek-v4-flash.yaml # Cheaper, faster model config
-│   └── team.yaml                  # Team config (host + member agents)
-├── prompts/
-│   ├── coding_system_prompt.txt   # System prompt for coding agents
-│   ├── host_system_prompt.txt     # System prompt for the host agent
-│   ├── research_system_prompt.txt # System prompt for the research agent
-│   └── system_prompt.txt          # System prompt template (single agent)
+orchestral-ai/
 ├── src/
 │   ├── __init__.py
 │   ├── main.py                    # Entry point — CLI parsing, team vs single mode
 │   ├── model.py                   # Model class — LLM configuration & chat completion
 │   ├── agent.py                   # Agent class — conversation loop & tool orchestration
 │   ├── team.py                    # Team class — multi-agent orchestration
-│   ├── tools.py                   # Tool registry — bash & read_file implementations
+│   ├── tools.py                   # Tool registry — bash, read_file, web_search, edit_file
 │   ├── chat_manager.py            # Chat persistence — save, list, resume chats
-│   └── input_handler.py           # Terminal input helpers — readline & history
+│   ├── input_handler.py           # Terminal input helpers — readline & history
+│   ├── configs/
+│   │   ├── agents/
+│   │   │   ├── coding_agent.yaml          # Agent config (model, tools, system prompt)
+│   │   │   ├── coding_agent_low.yaml      # Cheaper, faster model for simple coding tasks
+│   │   │   ├── coding_agent_high.yaml     # More capable model for complex coding tasks
+│   │   │   ├── host_agent.yaml            # Host agent config (team orchestrator)
+│   │   │   └── research_agent.yaml        # Research agent config (analysis & explanation)
+│   │   ├── models/
+│   │   │   ├── deepseek.yaml          # Model config (API endpoint, params)
+│   │   │   └── deepseek-v4-flash.yaml # Cheaper, faster model config
+│   │   └── team.yaml                  # Team config (host + member agents)
+│   └── prompts/
+│       ├── coding_system_prompt.txt   # System prompt for coding agents
+│       ├── host_system_prompt.txt     # System prompt for the host agent
+│       ├── research_system_prompt.txt # System prompt for the research agent
+│       └── system_prompt.txt          # System prompt template (single agent)
 ├── tests/
 │   ├── __init__.py
 │   ├── conftest.py                # Shared fixtures (temp_dir, temp_file)
@@ -41,6 +41,8 @@ smart_agent/
 │   ├── test_agent.py              # Tests for Agent (YAML loading, agent_turn, chat_loop)
 │   ├── test_team.py               # Tests for Team (config loading, delegation, chat loop)
 │   └── test_tools.py              # Tests for tools (allowlist, sensitive detection, bash, read_file)
+├── pyproject.toml                 # Package metadata & build config (setuptools)
+├── install.sh                     # One-command installer (curl | sh)
 ├── requirements.txt
 ├── LICENSE
 └── README.md
@@ -112,10 +114,10 @@ created in the working directory where the agent is launched:
 
 ```bash
 # List all saved chats with IDs, titles, and metadata
-python src/main.py --chats
+orchestral-cli --chats
 
 # Resume a specific chat by its ID
-python src/main.py --chat 86b73364ec4b
+orchestral-cli --chat 86b73364ec4b
 ```
 
 **In-chat commands:**
@@ -125,18 +127,56 @@ saved chats without leaving the conversation.
 
 Running with no flags starts a **new chat** (team mode, by default).
 
+## 📦 Installation
+
+### Quick install (Linux & macOS)
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/rerik/orchestral-ai/main/install.sh | sh
+```
+
+This single command installs `orchestral-cli` and makes it available on your PATH.  
+If the app is already installed, it upgrades it to the latest version automatically.
+
+### Install from local repo
+
+```bash
+# From a cloned copy of the repository
+./install.sh
+
+# Or with pip directly
+pip install .
+```
+
+### Install from GitHub
+
+```bash
+pip install git+https://github.com/rerik/orchestral-ai.git
+```
+
+To upgrade an existing installation, add `--upgrade`:
+
+```bash
+pip install --upgrade git+https://github.com/rerik/orchestral-ai.git
+```
+
+### Editable / development install
+
+```bash
+pip install -e .
+```
+
+This links the local source directory so code changes take effect immediately  
+without reinstalling.  Use this when hacking on the agent itself.
+
+---
+
 ## 🚀 How to Run
 
 ### Prerequisites
 
-- Python 3.9+
+- Python 3.10+
 - A DeepSeek API key (or any OpenAI-compatible LLM endpoint)
-
-### Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
 
 ### Environment Variables
 
@@ -154,23 +194,23 @@ The model config (`configs/models/deepseek.yaml`) reads the key from the `DEEPSE
 
 ```bash
 # Team mode (default) — starts a new chat
-python src/main.py
+orchestral-cli
 
 # Team mode with custom config — starts a new chat
-python src/main.py --team configs/team.yaml
+orchestral-cli --team configs/team.yaml
 
 # Single-agent mode — starts a new chat
-python src/main.py --agent configs/agents/coding_agent.yaml
+orchestral-cli --agent configs/agents/coding_agent.yaml
 ```
 
 **Managing saved chats:**
 
 ```bash
 # List all saved chats (shows IDs, titles, modes, message counts, timestamps)
-python src/main.py --chats
+orchestral-cli --chats
 
 # Resume a specific chat by ID
-python src/main.py --chat 86b73364ec4b
+orchestral-cli --chat 86b73364ec4b
 ```
 
 **Inside a chat session:**

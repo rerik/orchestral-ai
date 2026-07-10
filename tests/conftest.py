@@ -4,8 +4,9 @@ import sys
 import tempfile
 import pytest
 
-# Ensure the src directory is in the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+# Ensure the project root is on the path so the smart_agent package
+# is importable (requires `pip install -e .` for development).
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
 @pytest.fixture
