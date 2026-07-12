@@ -19,7 +19,7 @@ from .agent import Agent
 from .tools import get_tool_schemas, call_tool, safe_json_loads, configure_risk_model
 from .input_handler import setup_readline, get_input
 from .chat_manager import ChatManager
-from .main import find_config_path, get_config_search_dirs
+from .config_resolver import find_config_path, get_config_search_dirs
 
 
 @dataclass
@@ -67,9 +67,15 @@ class Team:
             raise ValueError("Team YAML missing required key: 'host.agent'")
 
         # --- Auto-load all model configs so agents can reference them by name ---
-        # Searches all config directories; higher-priority dirs win (first found sticks).
+        # Searches all config directories AND the team YAML's config root;
+        # higher-priority dirs win (first found sticks).
+        team_yaml_dir = os.path.dirname(os.path.abspath(yaml_path))
+        config_root_dir = os.path.dirname(team_yaml_dir)  # parent of configs/
+
         model_registry: dict[str, Model] = {}
-        for search_dir in get_config_search_dirs():
+        # Prepend the team YAML's config root so its models take priority
+        search_dirs = [config_root_dir] + get_config_search_dirs()
+        for search_dir in search_dirs:
             models_dir = os.path.join(search_dir, "configs", "models")
             if os.path.isdir(models_dir):
                 for fname in sorted(os.listdir(models_dir)):
@@ -92,8 +98,28 @@ class Team:
             risk_model = cheapest
         configure_risk_model(risk_model)
 
+        # --- Resolve agent paths relative to team YAML dir first ---
+        # The team YAML lives in a configs/ subdirectory of a config root
+        # (e.g. .orchestral-ai/configs/team.yaml).  Agent paths like
+        # "configs/agents/host.yaml" are relative to the config root, while
+        # paths like "../prompts/system.txt" are relative to the YAML itself.
+
+        def _resolve_agent_path(relative_path: str) -> str:
+            """Resolve an agent path first relative to the team YAML dir,
+            then relative to the config root, then via standard search."""
+            # 1. Relative to the team YAML's own directory
+            candidate = os.path.normpath(os.path.join(team_yaml_dir, relative_path))
+            if os.path.isfile(candidate):
+                return candidate
+            # 2. Relative to the config root (parent of configs/)
+            candidate = os.path.normpath(os.path.join(config_root_dir, relative_path))
+            if os.path.isfile(candidate):
+                return candidate
+            # 3. Fall back to the standard config search paths
+            return find_config_path(relative_path)
+
         # --- Load host agent ---
-        host_agent_path = find_config_path(data["host"]["agent"])
+        host_agent_path = _resolve_agent_path(data["host"]["agent"])
         if not os.path.isfile(host_agent_path):
             raise ValueError(f"Host agent config not found: {host_agent_path}")
         host_agent = Agent.from_yaml(host_agent_path, model_registry=model_registry)
@@ -104,7 +130,7 @@ class Team:
 
         for entry in data.get("agents", []) or []:
             name = entry.get("name", "").strip()
-            agent_path = find_config_path(entry.get("agent", ""))
+            agent_path = _resolve_agent_path(entry.get("agent", ""))
             description = entry.get("description", "").strip()
 
             if not name:
